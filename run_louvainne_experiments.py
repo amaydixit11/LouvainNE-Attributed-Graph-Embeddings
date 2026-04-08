@@ -272,6 +272,109 @@ def micro_macro_f1(y_true: torch.Tensor, y_pred: torch.Tensor, num_classes: int)
     return micro, macro
 
 
+def create_link_prediction_split(
+    edge_index: torch.Tensor,
+    val_ratio: float = 0.05,
+    test_ratio: float = 0.1,
+    seed: int = 42,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Split edges into train/val/test for link prediction.
+    
+    Returns:
+        train_pos_edges, val_pos_edges, test_pos_edges,
+        train_edge_index, val_neg_edges, test_neg_edges
+    """
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    
+    num_edges = edge_index.shape[1]
+    perm = torch.randperm(num_edges, generator=generator)
+    edge_index = edge_index[:, perm]
+    
+    num_test = max(1, int(num_edges * test_ratio))
+    num_val = max(1, int(num_edges * val_ratio))
+    
+    test_pos_edges = edge_index[:, :num_test]
+    val_pos_edges = edge_index[:, num_test:num_test + num_val]
+    train_pos_edges = edge_index[:, num_test + num_val:]
+    
+    train_edge_index = train_pos_edges
+    
+    num_nodes = int(edge_index.max()) + 1
+    adj_set = set()
+    for i in range(edge_index.shape[1]):
+        u, v = int(edge_index[0, i].item()), int(edge_index[1, i].item())
+        adj_set.add((u, v))
+        adj_set.add((v, u))
+    
+    def sample_negative_edges(num_neg: int, generator: torch.Generator) -> torch.Tensor:
+        neg_edges = []
+        attempts = 0
+        max_attempts = num_neg * 100
+        while len(neg_edges) < num_neg and attempts < max_attempts:
+            u = torch.randint(0, num_nodes, (1,), generator=generator).item()
+            v = torch.randint(0, num_nodes, (1,), generator=generator).item()
+            attempts += 1
+            if u != v and (u, v) not in adj_set:
+                neg_edges.append((u, v))
+        if len(neg_edges) < num_neg:
+            while len(neg_edges) < num_neg:
+                u = torch.randint(0, num_nodes, (1,), generator=generator).item()
+                v = torch.randint(0, num_nodes, (1,), generator=generator).item()
+                if u != v:
+                    neg_edges.append((u, v))
+        return torch.tensor(neg_edges, dtype=torch.long).t()
+    
+    val_neg_edges = sample_negative_edges(num_val, generator)
+    test_neg_edges = sample_negative_edges(num_test, generator)
+    
+    return train_pos_edges, val_pos_edges, test_pos_edges, train_edge_index, val_neg_edges, test_neg_edges
+
+
+def compute_link_prediction_metrics(
+    embeddings: torch.Tensor,
+    pos_edges: torch.Tensor,
+    neg_edges: torch.Tensor,
+) -> Dict[str, float]:
+    """Compute AUC and AP for link prediction using dot product scoring."""
+    pos_scores = (embeddings[pos_edges[0]] * embeddings[pos_edges[1]]).sum(dim=1)
+    neg_scores = (embeddings[neg_edges[0]] * embeddings[neg_edges[1]]).sum(dim=1)
+    
+    all_scores = torch.cat([pos_scores, neg_scores])
+    all_labels = torch.cat([torch.ones_like(pos_scores), torch.zeros_like(neg_scores)])
+    
+    sorted_indices = torch.argsort(all_scores, descending=True)
+    sorted_labels = all_labels[sorted_indices]
+    
+    num_pos = int(pos_scores.shape[0])
+    num_neg = int(neg_scores.shape[0])
+    
+    tp = torch.cumsum(sorted_labels, dim=0)
+    fp = torch.cumsum(1 - sorted_labels, dim=0)
+    
+    precision = tp / (tp + fp + 1e-10)
+    recall = tp / (num_pos + 1e-10)
+    
+    precision = torch.cat([torch.tensor([1.0]), precision])
+    recall = torch.cat([torch.tensor([0.0]), recall])
+    
+    ap = float(torch.sum((recall[1:] - recall[:-1]) * precision[1:]).item())
+    
+    tpr = tp / (num_pos + 1e-10)
+    fpr = fp / (num_neg + 1e-10)
+    
+    tpr = torch.cat([torch.tensor([0.0]), tpr])
+    fpr = torch.cat([torch.tensor([0.0]), fpr])
+    
+    sorted_fpr, sort_idx = torch.sort(fpr)
+    sorted_tpr = tpr[sort_idx]
+    
+    auc = float(torch.trapz(sorted_tpr, sorted_fpr).item())
+    auc = max(0.0, min(1.0, auc))
+    
+    return {"link_auc": auc, "link_ap": ap}
+
+
 class LinearProbe(nn.Module):
     def __init__(self, in_dim: int, num_classes: int) -> None:
         super().__init__()
@@ -537,6 +640,63 @@ def feature_svd(x: torch.Tensor, out_dim: int) -> torch.Tensor:
     u, s, _ = torch.linalg.svd(centered, full_matrices=False)
     projected = u[:, :out_dim] * s[:out_dim]
     return normalize_rows(projected.to(torch.float32))
+
+
+def low_rank_projection(x: torch.Tensor, out_dim: int) -> torch.Tensor:
+    """Project features to lower dimension using PCA."""
+    centered = x.to(torch.float32) - x.to(torch.float32).mean(dim=0, keepdim=True)
+    q = min(max(out_dim + 8, out_dim), min(centered.shape))
+    _, _, v = torch.pca_lowrank(centered, q=q, center=False, niter=2)
+    return centered @ v[:, :out_dim]
+
+
+def build_blockwise_topk_predictions(
+    features: torch.Tensor,
+    top_k: int,
+    mutual: bool,
+    min_similarity: float,
+    block_size: int = 512,
+) -> Dict[Tuple[int, int], float]:
+    """Build top-k predictions using blockwise cosine similarity computation."""
+    normalized = normalize_rows(features)
+    num_nodes = normalized.shape[0]
+    top_k = max(1, min(top_k, num_nodes - 1))
+    neighbor_maps: List[Dict[int, float]] = [dict() for _ in range(num_nodes)]
+
+    for start in range(0, num_nodes, block_size):
+        end = min(start + block_size, num_nodes)
+        scores = normalized[start:end] @ normalized.t()
+        row_ids = torch.arange(start, end)
+        scores[torch.arange(end - start), row_ids] = -1.0
+        values, indices = torch.topk(scores, k=top_k, dim=1)
+        for row_offset, node_id in enumerate(range(start, end)):
+            row_values = values[row_offset]
+            row_indices = indices[row_offset]
+            for score, neighbor in zip(row_values.tolist(), row_indices.tolist()):
+                if score < min_similarity:
+                    continue
+                neighbor_maps[node_id][int(neighbor)] = float(score)
+
+    predictions: Dict[Tuple[int, int], float] = {}
+    if mutual:
+        for node_id, neighbors in enumerate(neighbor_maps):
+            for neighbor, score in neighbors.items():
+                if node_id >= neighbor:
+                    continue
+                reverse = neighbor_maps[neighbor].get(node_id)
+                if reverse is None:
+                    continue
+                predictions[(node_id, neighbor)] = float((score + reverse) * 0.5)
+        return predictions
+
+    for node_id, neighbors in enumerate(neighbor_maps):
+        for neighbor, score in neighbors.items():
+            a, b = (node_id, neighbor) if node_id < neighbor else (neighbor, node_id)
+            if a == b:
+                continue
+            previous = predictions.get((a, b))
+            predictions[(a, b)] = score if previous is None else max(previous, score)
+    return predictions
 
 
 def build_baseline_results(

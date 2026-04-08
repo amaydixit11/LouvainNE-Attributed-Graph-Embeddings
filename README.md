@@ -73,7 +73,37 @@ This creates `data/` and prepares exactly these datasets:
 - `PubMed`
 - `BlogCatalog`
 
-### Cora reproduction
+### Master experiment runner (recommended)
+
+Run all benchmarks end-to-end:
+
+```bash
+python run_all_experiments.py
+```
+
+This executes:
+1. Dataset preparation
+2. Standard benchmarks (Node Classification + Link Prediction)
+3. OGB large-scale benchmarks (if `ogb` package installed)
+4. Comprehensive SOTA comparison report generation
+
+Options:
+
+```bash
+# Skip specific stages
+python run_all_experiments.py --skip-ogb  # Skip OGB if ogb not installed
+python run_all_experiments.py --skip-report  # Skip report generation
+
+# Custom datasets
+python run_all_experiments.py --datasets Cora CiteSeer --ogb-datasets ogbn-arxiv
+
+# Check dependencies only
+python run_all_experiments.py --check-only
+```
+
+### Individual benchmark scripts
+
+#### Cora reproduction
 
 Quick smoke test:
 
@@ -91,18 +121,18 @@ python run_louvainne_experiments.py \
   --plot-path results/louvainne_comparison.png
 ```
 
-### Multi-dataset benchmark
+#### Multi-dataset benchmark (with link prediction)
 
-Run all maintained datasets:
+Run all maintained datasets with **both node classification and link prediction**:
 
 ```bash
-python benchmark_datasets.py --datasets Cora CiteSeer PubMed BlogCatalog
+python benchmark_datasets_lp.py --datasets Cora CiteSeer PubMed BlogCatalog
 ```
 
 Run only one dataset:
 
 ```bash
-python benchmark_datasets.py --datasets CiteSeer
+python benchmark_datasets_lp.py --datasets CiteSeer
 ```
 
 This writes:
@@ -115,9 +145,38 @@ This writes:
 - `results/benchmark_summary.md`
 - `results/benchmark_summary.png`
 
+#### OGB large-scale benchmarks
+
+Run on Open Graph Benchmark datasets (requires `ogb` package):
+
+```bash
+pip install ogb
+python benchmark_ogb.py --datasets ogbn-arxiv
+python benchmark_ogb.py --datasets ogbn-arxiv ogbn-products --embedding-dim 256
+```
+
+This writes:
+
+- `results/ogbn_arxiv/ogb_results.json`
+- `results/ogb_benchmark_summary.json`
+- `results/ogb_sota_comparison.md`
+- `results/ogb_comparison.png`
+
+#### SOTA comparison report
+
+Generate comprehensive markdown report comparing LouvainNE with published GNN results:
+
+```bash
+python generate_sota_report.py
+```
+
+This writes:
+
+- `results/comprehensive_benchmark_report.md`
+
 ## Testing guidelines
 
-Use this as the minimal check after any code change:
+### Minimal smoke test
 
 1. Prepare the datasets:
 
@@ -131,58 +190,52 @@ python prepare_datasets.py
 python run_louvainne_experiments.py --tune-runs 1 --eval-runs 1 --output-json /tmp/louvainne_smoke.json --plot-path /tmp/louvainne_smoke.png
 ```
 
-3. Run the full Cora benchmark:
+### Full benchmark suite
+
+3. Run the multi-dataset benchmark with link prediction:
 
 ```bash
-python run_louvainne_experiments.py --tune-runs 2 --eval-runs 5 --output-json results/louvainne_results.json --plot-path results/louvainne_comparison.png
+python benchmark_datasets_lp.py --datasets Cora CiteSeer PubMed BlogCatalog
 ```
 
-4. Run the multi-dataset benchmark:
+4. Run OGB benchmarks (optional, requires `ogb`):
 
 ```bash
-python benchmark_datasets.py --datasets Cora CiteSeer PubMed BlogCatalog
+pip install ogb
+python benchmark_ogb.py --datasets ogbn-arxiv
 ```
 
-5. Verify the key outputs exist:
+5. Generate comprehensive report:
+
+```bash
+python generate_sota_report.py
+```
+
+6. Verify the key outputs exist:
 
 ```bash
 ls \
   data/manifest.json \
-  results/louvainne_results.json \
-  results/louvainne_comparison.png \
   results/benchmark_summary.json \
   results/benchmark_summary.md \
   results/benchmark_summary.png \
+  results/comprehensive_benchmark_report.md \
   results/Cora/comparison_results.json \
   results/CiteSeer/comparison_results.json \
   results/PubMed/comparison_results.json \
-  results/BlogCatalog/comparison_results.json \
-  summay.md
+  results/BlogCatalog/comparison_results.json
 ```
 
-6. Inspect the saved Cora metrics quickly:
+7. Inspect the multi-dataset summary:
 
 ```bash
-python - <<'PY'
-import json
-from pathlib import Path
-payload = json.loads(Path('results/louvainne_results.json').read_text())
-for key in ['baseline', 'improved']:
-    item = payload['final_results'][key]
-    print(
-        key,
-        'micro', round(item['test_micro_f1_mean'], 4),
-        'macro', round(item['test_macro_f1_mean'], 4),
-        'setup_s', round(item['setup_time_seconds'], 2),
-        'per_seed_s', round(item['per_seed_eval_time_seconds_mean'], 2),
-    )
-PY
+cat results/benchmark_summary.md
 ```
 
-7. Inspect the multi-dataset summary quickly:
+8. View the comprehensive report:
 
 ```bash
-sed -n '1,120p' results/benchmark_summary.md
+cat results/comprehensive_benchmark_report.md
 ```
 
 ## Current best result
