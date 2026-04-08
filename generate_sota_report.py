@@ -13,30 +13,44 @@ from typing import Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent
 
-# Published SOTA results from literature
-# IMPORTANT: These numbers are from published papers and may use different
-# splits, preprocessing, or evaluation protocols. Direct comparison should
-# be interpreted with caution. Always check the original paper for details.
+# Published SOTA results from OpenCodePapers leaderboard
+# Source: https://opencodepapers-b7572d.gitlab.io/benchmarks/node-classification-on-cora-with-public-split.html
+# IMPORTANT: These numbers are from published papers using the official Cora public split (140 train).
+# Direct comparison should account for potential differences in preprocessing or evaluation details.
 SOTA_NODE_CLASSIFICATION = {
     "Cora": {
-        "GCN": {"micro_f1": 0.815, "macro_f1": 0.790, "training_free": False, "ref": "Kipf & Welling 2017"},
-        "GAT": {"micro_f1": 0.830, "macro_f1": 0.810, "training_free": False, "ref": "Veličković et al. 2018"},
-        "APPNP": {"micro_f1": 0.847, "macro_f1": 0.830, "training_free": False, "ref": "Klicpera et al. 2019"},
-        "GraphSAGE": {"micro_f1": 0.816, "macro_f1": 0.795, "training_free": False, "ref": "Hamilton et al. 2017"},
-        "DeepWalk": {"micro_f1": 0.672, "macro_f1": 0.650, "training_free": True, "ref": "Perozzi et al. 2014"},
-        "node2vec": {"micro_f1": 0.696, "macro_f1": 0.680, "training_free": True, "ref": "Grover & Leskovec 2016"},
+        "OGC": {"micro_f1": 0.869, "macro_f1": None, "training_free": False, "ref": "Wang et al. 2023 (OGC)"},
+        "GCN-TV": {"micro_f1": 0.863, "macro_f1": None, "training_free": False, "ref": "Liu et al. 2023"},
+        "GCNII": {"micro_f1": 0.855, "macro_f1": None, "training_free": False, "ref": "Chen et al. 2020"},
+        "GRAND": {"micro_f1": 0.854, "macro_f1": None, "training_free": False, "ref": "Feng et al. 2020"},
+        "CPF-ind-APPNP": {"micro_f1": 0.853, "macro_f1": None, "training_free": False, "ref": "Liu et al. 2021"},
+        "GCN (tuned)": {"micro_f1": 0.851, "macro_f1": None, "training_free": False, "ref": "Luo et al. 2024 (tunedGNN)"},
+        "AIR-GCN": {"micro_f1": 0.847, "macro_f1": None, "training_free": False, "ref": "Wang et al. 2019"},
+        "H-GCN": {"micro_f1": 0.845, "macro_f1": None, "training_free": False, "ref": "Zhu et al. 2019"},
+        "DAGNN": {"micro_f1": 0.844, "macro_f1": None, "training_free": False, "ref": "Liu et al. 2020"},
+        "G-APPNP": {"micro_f1": 0.8431, "macro_f1": None, "training_free": False, "ref": "Zhu et al. 2019"},
+        "SuperGAT MX": {"micro_f1": 0.843, "macro_f1": None, "training_free": False, "ref": "Kim & Oh 2022"},
+        "DSGCN": {"micro_f1": 0.842, "macro_f1": None, "training_free": False, "ref": "Balçılar et al. 2020"},
+        "LDS-GNN": {"micro_f1": 0.841, "macro_f1": None, "training_free": False, "ref": "Franceschi et al. 2019"},
+        "GraphMix": {"micro_f1": 0.8394, "macro_f1": None, "training_free": False, "ref": "Verma et al. 2019"},
+        "GCN+GAugO": {"micro_f1": 0.836, "macro_f1": None, "training_free": False, "ref": "Zhao et al. 2020"},
+        "GGCM": {"micro_f1": 0.836, "macro_f1": None, "training_free": False, "ref": "Wang et al. 2023"},
+        "GAT": {"micro_f1": 0.830, "macro_f1": None, "training_free": False, "ref": "Veličković et al. 2017"},
+        "GEM": {"micro_f1": 0.8305, "macro_f1": None, "training_free": False, "ref": "Chen 2023"},
+        "SSP": {"micro_f1": 0.8284, "macro_f1": None, "training_free": False, "ref": "Izadi et al. 2020"},
+        "GraphSAGE": {"micro_f1": 0.745, "macro_f1": None, "training_free": False, "ref": "Hamilton et al. 2017"},
     },
     "CiteSeer": {
-        "GCN": {"micro_f1": 0.703, "macro_f1": 0.680, "training_free": False, "ref": "Kipf & Welling 2017"},
-        "GAT": {"micro_f1": 0.725, "macro_f1": 0.700, "training_free": False, "ref": "Veličković et al. 2018"},
-        "APPNP": {"micro_f1": 0.742, "macro_f1": 0.720, "training_free": False, "ref": "Klicpera et al. 2019"},
-        "GraphSAGE": {"micro_f1": 0.708, "macro_f1": 0.685, "training_free": False, "ref": "Hamilton et al. 2017"},
+        "GCN": {"micro_f1": 0.703, "macro_f1": None, "training_free": False, "ref": "Kipf & Welling 2017"},
+        "GAT": {"micro_f1": 0.725, "macro_f1": None, "training_free": False, "ref": "Veličković et al. 2018"},
+        "APPNP": {"micro_f1": 0.742, "macro_f1": None, "training_free": False, "ref": "Klicpera et al. 2019"},
+        "GraphSAGE": {"micro_f1": 0.708, "macro_f1": None, "training_free": False, "ref": "Hamilton et al. 2017"},
     },
     "PubMed": {
-        "GCN": {"micro_f1": 0.790, "macro_f1": 0.770, "training_free": False, "ref": "Kipf & Welling 2017"},
-        "GAT": {"micro_f1": 0.790, "macro_f1": 0.775, "training_free": False, "ref": "Veličković et al. 2018"},
-        "APPNP": {"micro_f1": 0.809, "macro_f1": 0.790, "training_free": False, "ref": "Klicpera et al. 2019"},
-        "GraphSAGE": {"micro_f1": 0.785, "macro_f1": 0.765, "training_free": False, "ref": "Hamilton et al. 2017"},
+        "GCN": {"micro_f1": 0.790, "macro_f1": None, "training_free": False, "ref": "Kipf & Welling 2017"},
+        "GAT": {"micro_f1": 0.790, "macro_f1": None, "training_free": False, "ref": "Veličković et al. 2018"},
+        "APPNP": {"micro_f1": 0.809, "macro_f1": None, "training_free": False, "ref": "Klicpera et al. 2019"},
+        "GraphSAGE": {"micro_f1": 0.785, "macro_f1": None, "training_free": False, "ref": "Hamilton et al. 2017"},
     },
     "BlogCatalog": {
         "DeepWalk": {"micro_f1": 0.329, "macro_f1": 0.197, "training_free": True, "ref": "Perozzi et al. 2014"},
