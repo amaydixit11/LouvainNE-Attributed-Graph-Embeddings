@@ -141,14 +141,20 @@ def evaluate_ogb_with_timing(
     embedding_fn,
     setup_time_seconds: float = 0.0,
     lp_seeds: Sequence[int] = LP_SPLIT_SEEDS,
+    structure_edges: Dict[Tuple[int, int], float] = None,
+    improved_predictions: Dict[Tuple[int, int], float] = None,
 ) -> Dict[str, object]:
-    """Evaluate with node classification and link prediction timing."""
+    """Evaluate with node classification and link prediction timing.
+    
+    IMPORTANT: For link prediction, we rebuild the graph with test edges removed
+    to avoid data leakage. Node classification still uses the full graph.
+    """
     runs = []
     for seed in seeds:
         pipeline_start = time.perf_counter()
         embeddings = embedding_fn(seed).to(torch.float32)
         embedding_elapsed = time.perf_counter() - pipeline_start
-        
+
         data_for_probe = type('GraphData', (), {
             'x': data.x,
             'y': data.y,
@@ -157,43 +163,85 @@ def evaluate_ogb_with_timing(
             'test_mask': data.test_mask,
             'num_classes': data.num_classes,
         })()
-        
+
         metrics = fit_linear_probe(embeddings, data_for_probe, penalties, seed)
-        
+
+        # Link prediction: use train-only graph to avoid leakage
         link_auc_values = []
         link_ap_values = []
-        for lp_seed in lp_seeds[:2]:
+        
+        if structure_edges is not None and improved_predictions is not None:
+            # Use single LP split for large OGB graphs (rebuilding is expensive)
+            lp_seed = lp_seeds[0]
             try:
-                train_pos, val_pos, test_pos, train_idx, val_neg, test_neg = create_link_prediction_split(
+                train_pos, val_pos, test_pos, train_edge_index, val_neg, test_neg = create_link_prediction_split(
                     data.edge_index, seed=lp_seed, val_ratio=0.02, test_ratio=0.05
                 )
-                lp_metrics = compute_link_prediction_metrics(embeddings, test_pos, test_neg)
+                
+                # Build canonical edge sets
+                train_edge_set = set()
+                for i in range(train_edge_index.shape[1]):
+                    u, v = int(train_edge_index[0, i].item()), int(train_edge_index[1, i].item())
+                    if u < v:
+                        train_edge_set.add((u, v))
+                    else:
+                        train_edge_set.add((v, u))
+                
+                # Build val/test edge sets to exclude from predicted edges
+                val_test_edges = set()
+                for i in range(val_pos.shape[1]):
+                    u, v = int(val_pos[0, i].item()), int(val_pos[1, i].item())
+                    val_test_edges.add((min(u, v), max(u, v)))
+                for i in range(test_pos.shape[1]):
+                    u, v = int(test_pos[0, i].item()), int(test_pos[1, i].item())
+                    val_test_edges.add((min(u, v), max(u, v)))
+                
+                # Keep train-only structural edges
+                train_structure = {k: v for k, v in structure_edges.items() if k in train_edge_set}
+                
+                # Keep predicted edges EXCEPT those in val/test sets
+                train_predicted = {k: v for k, v in improved_predictions.items() if k not in val_test_edges}
+                
+                # Fuse train-only edges
+                train_fused = dict(train_structure)
+                for edge, sim in train_predicted.items():
+                    if edge in train_fused:
+                        train_fused[edge] = 1.0 + 1.0 * sim
+                    else:
+                        train_fused[edge] = 0.75 * sim
+                
+                # Compute embeddings on train-only graph
+                num_nodes = int(data.edge_index.max()) + 1
+                runner = LouvainNERunner(REPO_ROOT, num_nodes, 256)
+                train_embeddings = normalize_rows(runner.embed(train_fused, seed + 10000))
+                
+                lp_metrics = compute_link_prediction_metrics(train_embeddings, test_pos, test_neg)
                 link_auc_values.append(lp_metrics["link_auc"])
                 link_ap_values.append(lp_metrics["link_ap"])
-            except Exception:
+            except Exception as e:
                 pass
-        
+
         if link_auc_values:
             metrics["link_auc"] = float(sum(link_auc_values) / len(link_auc_values))
             metrics["link_ap"] = float(sum(link_ap_values) / len(link_ap_values))
         else:
             metrics["link_auc"] = 0.0
             metrics["link_ap"] = 0.0
-        
+
         per_seed_elapsed = time.perf_counter() - pipeline_start
         metrics["seed"] = float(seed)
         metrics["embedding_time_seconds"] = float(embedding_elapsed)
         metrics["classifier_time_seconds"] = float(per_seed_elapsed - embedding_elapsed)
         metrics["per_seed_eval_time_seconds"] = float(per_seed_elapsed)
         runs.append(metrics)
-    
+
     result = {"name": name, "config": config, "runs": runs}
     for key in ["val_micro_f1", "val_macro_f1", "test_micro_f1", "test_macro_f1", "link_auc", "link_ap"]:
         values = [run.get(key, 0.0) for run in runs]
         result[f"{key}_mean"] = float(sum(values) / len(values)) if values else 0.0
         std = (sum((v - result[f"{key}_mean"]) ** 2 for v in values) / len(values)) ** 0.5 if values else 0.0
         result[f"{key}_std"] = float(std)
-    
+
     result["setup_time_seconds"] = float(setup_time_seconds)
     for key in ["embedding_time_seconds", "classifier_time_seconds", "per_seed_eval_time_seconds"]:
         values = [run.get(key, 0.0) for run in runs]
@@ -202,7 +250,7 @@ def evaluate_ogb_with_timing(
         result[f"{key}_std"] = float(std)
     result["pipeline_time_seconds_mean"] = result["per_seed_eval_time_seconds_mean"]
     result["pipeline_time_seconds_std"] = result["per_seed_eval_time_seconds_std"]
-    
+
     return result
 
 
@@ -266,11 +314,13 @@ def benchmark_ogb_dataset(
         DEFAULT_PENALTIES,
         improved_embedding_fn,
         setup_time_seconds=improved_setup_time_seconds,
+        structure_edges=structure_edges,
+        improved_predictions=improved_predictions if use_attributes else None,
     )
-    
+
     def baseline_embedding_fn(seed: int) -> torch.Tensor:
         return runner.embed(structure_edges, seed)
-    
+
     baseline_result = evaluate_ogb_with_timing(
         "louvainne_structure_only",
         {
@@ -282,6 +332,8 @@ def benchmark_ogb_dataset(
         DEFAULT_PENALTIES,
         baseline_embedding_fn,
         setup_time_seconds=0.0,
+        structure_edges=structure_edges,
+        improved_predictions=None,  # Baseline has no predictions
     )
     
     payload = {

@@ -182,6 +182,7 @@ def evaluate_units_with_link_pred(
     full_edge_index: torch.Tensor = None,
     structure_edges: Dict[Tuple[int, int], float] = None,
     improved_predictions: Dict[Tuple[int, int], float] = None,
+    feature_matrix: torch.Tensor = None,
 ) -> Dict[str, object]:
     """Evaluate both node classification and link prediction.
     
@@ -211,7 +212,7 @@ def evaluate_units_with_link_pred(
                     full_edge_index, val_ratio=LP_VAL_RATIO, test_ratio=LP_TEST_RATIO, seed=lp_seed
                 )
                 
-                # Rebuild graph with only train edges
+                # Build canonical edge sets
                 train_edge_set = set()
                 for i in range(train_edge_index.shape[1]):
                     u, v = int(train_edge_index[0, i].item()), int(train_edge_index[1, i].item())
@@ -220,9 +221,21 @@ def evaluate_units_with_link_pred(
                     else:
                         train_edge_set.add((v, u))
                 
-                # Filter structural and predicted edges to train-only
+                # Build val/test edge sets to exclude from predicted edges
+                val_test_edges = set()
+                for i in range(val_pos.shape[1]):
+                    u, v = int(val_pos[0, i].item()), int(val_pos[1, i].item())
+                    val_test_edges.add((min(u, v), max(u, v)))
+                for i in range(test_pos.shape[1]):
+                    u, v = int(test_pos[0, i].item()), int(test_pos[1, i].item())
+                    val_test_edges.add((min(u, v), max(u, v)))
+                
+                # Keep train-only structural edges
                 train_structure = {k: v for k, v in structure_edges.items() if k in train_edge_set}
-                train_predicted = {k: v for k, v in improved_predictions.items() if k in train_edge_set}
+                
+                # Keep predicted edges EXCEPT those in val/test sets
+                # This preserves the attribute-predicted edges while avoiding leakage
+                train_predicted = {k: v for k, v in improved_predictions.items() if k not in val_test_edges}
                 
                 # Fuse train-only edges
                 train_fused = dict(train_structure)
@@ -232,12 +245,26 @@ def evaluate_units_with_link_pred(
                     else:
                         train_fused[edge] = 0.75 * sim
                 
-                # Build node count
-                num_nodes = int(full_edge_index.max()) + 1
-                
                 # Compute embeddings on train-only graph
                 runner = LouvainNERunner(REPO_ROOT, num_nodes, 256)
-                train_embeddings = normalize_rows(runner.embed(train_fused, seed + 10000))
+                graph_embedding = normalize_rows(runner.embed(train_fused, seed + 10000))
+                
+                # Apply same improved pipeline as node classification:
+                # 1. Sparse attention refinement
+                graph_embedding = apply_sparse_attention(
+                    graph_embedding,
+                    train_predicted,  # Use train-only predicted edges for attention
+                    gamma=0.5,
+                    temperature=1.0,
+                )
+                
+                # 2. Attribute residual concatenation
+                if feature_matrix is not None:
+                    projection_dim = min(RESIDUAL_DIM, feature_matrix.shape[0] - 1, feature_matrix.shape[1])
+                    feature_embedding = normalize_rows(low_rank_projection(feature_matrix, projection_dim))
+                    train_embeddings = concat_features([graph_embedding, feature_embedding])
+                else:
+                    train_embeddings = graph_embedding
                 
                 # Evaluate link prediction
                 lp_metrics = compute_link_prediction_metrics(train_embeddings, test_pos, test_neg)
@@ -407,6 +434,7 @@ def benchmark_dataset_with_link_pred(dataset_name: str, embedding_dim: int) -> D
         full_edge_index=data.edge_index,
         structure_edges=structure_edges,
         improved_predictions=baseline_predictions,
+        feature_matrix=data.x,
     )
 
     def improved_embedding(seed: int) -> torch.Tensor:
@@ -441,6 +469,7 @@ def benchmark_dataset_with_link_pred(dataset_name: str, embedding_dim: int) -> D
         full_edge_index=data.edge_index,
         structure_edges=structure_edges,
         improved_predictions=improved_predictions,
+        feature_matrix=data.x,
     )
 
     paths = build_paths(bundle.name)

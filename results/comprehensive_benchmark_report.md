@@ -35,24 +35,24 @@ This report presents a comprehensive comparison of our LouvainNE-based attribute
 | node2vec (GNN) | 0.3360 | 0.2030 | ✓ | Grover & Leskovec 2016 |
 | DeepWalk (GNN) | 0.3290 | 0.1970 | ✓ | Perozzi et al. 2014 |
 | LINE (GNN) | 0.3210 | 0.1890 | ✓ | Tang et al. 2015 |
-| **LouvainNE (structure)** | **0.7440 ± 0.0095** | 0.7353 ± 0.0098 | ✓ | **Ours** |
-| **LouvainNE (improved)** | **0.9105 ± 0.0057** | 0.9091 ± 0.0054 | ✓ | **Ours** |
+| **LouvainNE (structure)** | **0.7165 ± 0.0059** | 0.7031 ± 0.0068 | ✓ | **Ours** |
+| **LouvainNE (improved)** | **0.9061 ± 0.0071** | 0.9041 ± 0.0075 | ✓ | **Ours** |
 
 ### BlogCatalog: Link Prediction
 
 | Method | AUC | AP | Training-Free? | Reference |
 |---|---:|---:|---|---|
-| **LouvainNE (structure)** | **0.6857 ± 0.0046** | 0.8249 ± 0.0024 | ✓ | **Ours** |
-| **LouvainNE (improved)** | **0.6972 ± 0.0062** | 0.8287 ± 0.0021 | ✓ | **Ours** |
+| **LouvainNE (structure)** | **0.6627 ± 0.0028** | 0.7909 ± 0.0009 | ✓ | **Ours** |
+| **LouvainNE (improved)** | **0.7006 ± 0.0023** | 0.8177 ± 0.0009 | ✓ | **Ours** |
 
 ### BlogCatalog: Runtime Comparison
 
 | Metric | Baseline | Improved | Speedup |
 |---|---:|---:|---:|
-| Setup Time (s) | 1.98 | 1.69 | 1.17x |
-| Per-Seed Eval Time (s) | 24.38 ± 3.49 | 20.54 ± 1.69 | 1.19x |
-| Embedding Time (s) | 2.44 | 2.66 | - |
-| Classifier Time (s) | 21.93 | 17.88 | - |
+| Setup Time (s) | 2.39 | 1.99 | 1.20x |
+| Per-Seed Eval Time (s) | 31.85 ± 2.45 | 22.26 ± 1.81 | 1.43x |
+| Embedding Time (s) | 2.26 | 2.34 | - |
+| Classifier Time (s) | 29.60 | 19.92 | - |
 
 ---
 
@@ -62,19 +62,19 @@ This report presents a comprehensive comparison of our LouvainNE-based attribute
 
 | Dataset | LouvainNE (Structure) | LouvainNE (Improved) | Best GNN | Gap to GNN | Training-Free? |
 |---|---:|---:|---:|---:|---|
-| BlogCatalog | 0.7440 | 0.9105 | 0.3360 | -0.5745 | ✓ |
+| BlogCatalog | 0.7165 | 0.9061 | 0.3360 | -0.5701 | ✓ |
 
 ### Link Prediction Performance
 
 | Dataset | LouvainNE (Structure) AUC | LouvainNE (Improved) AUC | Best GNN AUC | Gap to GNN |
 |---|---:|---:|---:|---:|
-| BlogCatalog | 0.6857 | 0.6972 | 0.0000 | 0.0000 |
+| BlogCatalog | 0.6627 | 0.7006 | 0.0000 | 0.0000 |
 
 ### Runtime Scalability
 
 | Dataset | Nodes | LouvainNE Time (s) | Est. GNN Time/Epoch (s) | Relative Speed |
 |---|---:|---:|---:|---:|
-| BlogCatalog | 5,196 | 20.54 | 0.10 | 0.00x |
+| BlogCatalog | 5,196 | 22.26 | 0.10 | 0.00x |
 
 ---
 
