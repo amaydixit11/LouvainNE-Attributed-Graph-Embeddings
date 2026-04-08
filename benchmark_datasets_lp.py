@@ -49,6 +49,8 @@ IMPROVED_TOP_K = 15
 IMPROVED_MIN_SIMILARITY = 0.2
 BLOCK_SIZE = 512
 LP_SPLIT_SEEDS = [42, 43, 44, 45, 46]
+LP_VAL_RATIO = 0.05
+LP_TEST_RATIO = 0.10
 
 
 @dataclass
@@ -177,25 +179,70 @@ def evaluate_units_with_link_pred(
     embedding_fn,
     setup_time_seconds: float = 0.0,
     lp_split_seeds: Sequence[int] = LP_SPLIT_SEEDS,
+    full_edge_index: torch.Tensor = None,
+    structure_edges: Dict[Tuple[int, int], float] = None,
+    improved_predictions: Dict[Tuple[int, int], float] = None,
 ) -> Dict[str, object]:
-    """Evaluate both node classification and link prediction."""
+    """Evaluate both node classification and link prediction.
+    
+    IMPORTANT: For link prediction, we rebuild the graph with test edges removed
+    to avoid data leakage. Node classification still uses the full graph.
+    """
     runs = []
     for unit_name, unit_data, seed in units:
         start = time.perf_counter()
+        
+        # Node classification: use full graph embeddings
         embeddings = embedding_fn(seed).to(torch.float32)
         embedding_elapsed = time.perf_counter() - start
         
         metrics = fit_linear_probe(embeddings, unit_data, penalties, seed)
         
+        # Link prediction: use train-only graph to avoid leakage
         link_auc_values = []
         link_ap_values = []
-        for lp_seed in lp_split_seeds[:3]:
-            train_pos, val_pos, test_pos, train_idx, val_neg, test_neg = create_link_prediction_split(
-                unit_data.edge_index, seed=lp_seed
-            )
-            lp_metrics = compute_link_prediction_metrics(embeddings, test_pos, test_neg)
-            link_auc_values.append(lp_metrics["link_auc"])
-            link_ap_values.append(lp_metrics["link_ap"])
+        
+        if full_edge_index is not None and structure_edges is not None and improved_predictions is not None:
+            num_nodes = int(full_edge_index.max()) + 1
+            # Use fewer LP seeds for large graphs to avoid excessive runtime
+            num_lp_seeds = 2 if num_nodes > 5000 else 3
+            for lp_seed in lp_split_seeds[:num_lp_seeds]:
+                train_pos, val_pos, test_pos, train_edge_index, val_neg, test_neg = create_link_prediction_split(
+                    full_edge_index, val_ratio=LP_VAL_RATIO, test_ratio=LP_TEST_RATIO, seed=lp_seed
+                )
+                
+                # Rebuild graph with only train edges
+                train_edge_set = set()
+                for i in range(train_edge_index.shape[1]):
+                    u, v = int(train_edge_index[0, i].item()), int(train_edge_index[1, i].item())
+                    if u < v:
+                        train_edge_set.add((u, v))
+                    else:
+                        train_edge_set.add((v, u))
+                
+                # Filter structural and predicted edges to train-only
+                train_structure = {k: v for k, v in structure_edges.items() if k in train_edge_set}
+                train_predicted = {k: v for k, v in improved_predictions.items() if k in train_edge_set}
+                
+                # Fuse train-only edges
+                train_fused = dict(train_structure)
+                for edge, sim in train_predicted.items():
+                    if edge in train_fused:
+                        train_fused[edge] = 1.0 + 1.0 * sim
+                    else:
+                        train_fused[edge] = 0.75 * sim
+                
+                # Build node count
+                num_nodes = int(full_edge_index.max()) + 1
+                
+                # Compute embeddings on train-only graph
+                runner = LouvainNERunner(REPO_ROOT, num_nodes, 256)
+                train_embeddings = normalize_rows(runner.embed(train_fused, seed + 10000))
+                
+                # Evaluate link prediction
+                lp_metrics = compute_link_prediction_metrics(train_embeddings, test_pos, test_neg)
+                link_auc_values.append(lp_metrics["link_auc"])
+                link_ap_values.append(lp_metrics["link_ap"])
         
         metrics["link_auc"] = float(sum(link_auc_values) / len(link_auc_values)) if link_auc_values else 0.0
         metrics["link_ap"] = float(sum(link_ap_values) / len(link_ap_values)) if link_ap_values else 0.0
@@ -357,6 +404,9 @@ def benchmark_dataset_with_link_pred(dataset_name: str, embedding_dim: int) -> D
         penalties,
         lambda seed: runner.embed(baseline_edges, seed),
         setup_time_seconds=baseline_setup_time_seconds,
+        full_edge_index=data.edge_index,
+        structure_edges=structure_edges,
+        improved_predictions=baseline_predictions,
     )
 
     def improved_embedding(seed: int) -> torch.Tensor:
@@ -388,6 +438,9 @@ def benchmark_dataset_with_link_pred(dataset_name: str, embedding_dim: int) -> D
         penalties,
         improved_embedding,
         setup_time_seconds=improved_setup_time_seconds,
+        full_edge_index=data.edge_index,
+        structure_edges=structure_edges,
+        improved_predictions=improved_predictions,
     )
 
     paths = build_paths(bundle.name)

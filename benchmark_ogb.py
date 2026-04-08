@@ -65,7 +65,13 @@ class OGBDatasetBundle:
 
 
 def load_ogb_dataset(name: str) -> OGBDatasetBundle:
-    """Load OGB datasets. Requires ogb package."""
+    """Load OGB node property prediction datasets.
+    
+    NOTE: This uses node property prediction datasets (ogbn-*) for 
+    node classification evaluation. Link prediction is evaluated using
+    a custom protocol on the same graph structure (NOT official ogbl-* datasets).
+    Official OGB link prediction requires ogbl-* datasets with their own splits.
+    """
     try:
         from ogb.nodeproppred import NodePropPredDataset
     except ImportError:
@@ -80,7 +86,12 @@ def load_ogb_dataset(name: str) -> OGBDatasetBundle:
     
     edge_index = torch.from_numpy(graph["edge_index"]).to(torch.long)
     node_features = torch.from_numpy(graph["node_feat"]).to(torch.float32)
-    node_labels = labels.squeeze().to(torch.long)
+    
+    # Handle both numpy array and tensor labels
+    if hasattr(labels, 'to'):
+        node_labels = labels.squeeze().to(torch.long)
+    else:
+        node_labels = torch.from_numpy(labels.squeeze()).to(torch.long)
     
     train_mask = torch.zeros(node_labels.shape[0], dtype=torch.bool)
     val_mask = torch.zeros(node_labels.shape[0], dtype=torch.bool)
@@ -308,7 +319,13 @@ def write_ogb_sota_comparison(
     ogb_results: List[Dict[str, object]],
     output_path: Path,
 ) -> None:
-    """Write comprehensive SOTA comparison table."""
+    """Write comprehensive SOTA comparison table.
+    
+    DISCLAIMER: OGB link prediction results use a CUSTOM PROTOCOL
+    (not official ogbl-* evaluation). Node classification uses official
+    OGB splits. Direct comparison with official OGB leaderboard should
+    account for protocol differences.
+    """
     sota_data = {
         "ogbn-arxiv": {
             "GCN": {"accuracy": 0.7169, "time_per_epoch_s": 0.5, "params": "2M"},
@@ -323,9 +340,12 @@ def write_ogb_sota_comparison(
             "GAT": {"accuracy": 0.7710, "time_per_epoch_s": 12.0, "params": "6M"},
         },
     }
-    
+
     lines = [
         "# OGB Benchmark Results: LouvainNE vs SOTA GNNs",
+        "",
+        "**Protocol Disclaimer:** Node classification uses official OGB splits. Link prediction uses a custom protocol",
+        "(10% test, 5% val edge split with negative sampling) on ogbn-* graphs, NOT the official ogbl-* protocol.",
         "",
         "## Node Classification Results",
         "",

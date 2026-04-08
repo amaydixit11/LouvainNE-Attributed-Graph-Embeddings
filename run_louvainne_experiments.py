@@ -278,7 +278,10 @@ def create_link_prediction_split(
     test_ratio: float = 0.1,
     seed: int = 42,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Split edges into train/val/test for link prediction.
+    """Split edges into train/val/test for link prediction on undirected graphs.
+    
+    IMPORTANT: This function handles undirected graphs where each edge appears
+    as both (u,v) and (v,u). It canonicalizes edges to avoid leakage.
     
     Returns:
         train_pos_edges, val_pos_edges, test_pos_edges,
@@ -287,25 +290,57 @@ def create_link_prediction_split(
     generator = torch.Generator()
     generator.manual_seed(seed)
     
-    num_edges = edge_index.shape[1]
-    perm = torch.randperm(num_edges, generator=generator)
-    edge_index = edge_index[:, perm]
+    # Canonicalize: keep only (min(u,v), max(u,v)) pairs
+    edge_list = edge_index.t().tolist()
+    canonical_edges = set()
+    for u, v in edge_list:
+        if u == v:
+            continue
+        a, b = (u, v) if u < v else (v, u)
+        canonical_edges.add((a, b))
     
-    num_test = max(1, int(num_edges * test_ratio))
-    num_val = max(1, int(num_edges * val_ratio))
+    canonical_list = sorted(list(canonical_edges))
+    num_canonical = len(canonical_list)
     
-    test_pos_edges = edge_index[:, :num_test]
-    val_pos_edges = edge_index[:, num_test:num_test + num_val]
-    train_pos_edges = edge_index[:, num_test + num_val:]
+    # Shuffle canonical edges
+    perm = torch.randperm(num_canonical, generator=generator)
+    canonical_list = [canonical_list[i] for i in perm.tolist()]
     
-    train_edge_index = train_pos_edges
+    num_test = max(1, int(num_canonical * test_ratio))
+    num_val = max(1, int(num_canonical * val_ratio))
     
-    num_nodes = int(edge_index.max()) + 1
+    # Split canonical edges
+    test_canonical = canonical_list[:num_test]
+    val_canonical = canonical_list[num_test:num_test + num_val]
+    train_canonical = canonical_list[num_test + num_val:]
+    
+    # Helper to expand canonical to directed
+    def to_directed(canonical_pairs):
+        directed = []
+        for u, v in canonical_pairs:
+            directed.append((u, v))
+            directed.append((v, u))
+        return torch.tensor(directed, dtype=torch.long).t() if directed else torch.empty((2, 0), dtype=torch.long)
+    
+    # Expand back to directed edges for train
+    train_edges_directed = []
+    for u, v in train_canonical:
+        train_edges_directed.append((u, v))
+        train_edges_directed.append((v, u))
+    train_edge_index = torch.tensor(train_edges_directed, dtype=torch.long).t().contiguous() if train_edges_directed else edge_index
+    train_pos_edges = to_directed(train_canonical)
+    
+    # Positive edges for evaluation (directed form)
+    val_pos_edges = to_directed(val_canonical)
+    test_pos_edges = to_directed(test_canonical)
+    
+    # Build adjacency set from ALL original edges (for negative sampling)
     adj_set = set()
-    for i in range(edge_index.shape[1]):
-        u, v = int(edge_index[0, i].item()), int(edge_index[1, i].item())
+    for u, v in edge_list:
         adj_set.add((u, v))
         adj_set.add((v, u))
+    
+    num_nodes = int(edge_index.max()) + 1
     
     def sample_negative_edges(num_neg: int, generator: torch.Generator) -> torch.Tensor:
         neg_edges = []
@@ -325,8 +360,8 @@ def create_link_prediction_split(
                     neg_edges.append((u, v))
         return torch.tensor(neg_edges, dtype=torch.long).t()
     
-    val_neg_edges = sample_negative_edges(num_val, generator)
-    test_neg_edges = sample_negative_edges(num_test, generator)
+    val_neg_edges = sample_negative_edges(len(val_canonical), generator)
+    test_neg_edges = sample_negative_edges(len(test_canonical), generator)
     
     return train_pos_edges, val_pos_edges, test_pos_edges, train_edge_index, val_neg_edges, test_neg_edges
 

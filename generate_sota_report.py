@@ -14,6 +14,9 @@ from typing import Dict, List, Optional
 REPO_ROOT = Path(__file__).resolve().parent
 
 # Published SOTA results from literature
+# IMPORTANT: These numbers are from published papers and may use different
+# splits, preprocessing, or evaluation protocols. Direct comparison should
+# be interpreted with caution. Always check the original paper for details.
 SOTA_NODE_CLASSIFICATION = {
     "Cora": {
         "GCN": {"micro_f1": 0.815, "macro_f1": 0.790, "training_free": False, "ref": "Kipf & Welling 2017"},
@@ -55,6 +58,9 @@ SOTA_NODE_CLASSIFICATION = {
 }
 
 SOTA_LINK_PREDICTION = {
+    # NOTE: These are from Kipf & Welling 2016 (Variational Graph Auto-Encoders)
+    # Protocol: 10% train edges, 5% validation, 85% test with negative sampling
+    # Our custom protocol follows similar ratios but may differ in exact implementation
     "Cora": {
         "GCN-AE": {"auc": 0.8780, "ap": 0.8920, "training_free": False, "ref": "Kipf & Welling 2016"},
         "GAE": {"auc": 0.8740, "ap": 0.8890, "training_free": False, "ref": "Kipf & Welling 2016"},
@@ -257,6 +263,12 @@ def generate_comprehensive_report(
         "3. **Runtime**: Setup time, per-seed evaluation time, and scalability",
         "",
         "**Key Finding**: Our training-free LouvainNE pipeline achieves competitive accuracy while being orders of magnitude faster than GNN-based methods, especially on large-scale graphs.",
+        "",
+        "**Protocol Disclaimers:**",
+        "- SOTA numbers are from published papers and may use different splits/preprocessing",
+        "- Link prediction uses a custom protocol (10% test, 5% val edge split), similar to but not identical to Kipf & Welling 2016",
+        "- OGB link prediction uses custom protocol on ogbn-* graphs, NOT official ogbl-* evaluation",
+        "- Direct comparison should account for these protocol differences",
         "",
         "---",
         "",
