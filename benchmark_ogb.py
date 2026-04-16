@@ -25,6 +25,7 @@ import torch
 
 from run_louvainne_experiments import (
     LouvainNERunner,
+    build_link_prediction_embeddings,
     build_blockwise_topk_predictions,
     compute_link_prediction_metrics,
     create_link_prediction_split,
@@ -34,6 +35,7 @@ from run_louvainne_experiments import (
     fuse_repo_edges,
     low_rank_projection,
     normalize_rows,
+    prepare_train_link_prediction_edges,
     sparse_attention_from_edges,
     unique_undirected_edges,
 )
@@ -142,7 +144,14 @@ def evaluate_ogb_with_timing(
     setup_time_seconds: float = 0.0,
     lp_seeds: Sequence[int] = LP_SPLIT_SEEDS,
     structure_edges: Dict[Tuple[int, int], float] = None,
-    improved_predictions: Dict[Tuple[int, int], float] = None,
+    predicted_edges: Dict[Tuple[int, int], float] = None,
+    feature_matrix: torch.Tensor = None,
+    lp_overlap_scale: float = 1.0,
+    lp_new_scale: float = 1.0,
+    lp_attention_gamma: float = 0.0,
+    lp_attention_temperature: float = 1.0,
+    lp_feature_dim: int = 0,
+    lp_embedding_dim: int = 256,
 ) -> Dict[str, object]:
     """Evaluate with node classification and link prediction timing.
     
@@ -170,55 +179,38 @@ def evaluate_ogb_with_timing(
         link_auc_values = []
         link_ap_values = []
         
-        if structure_edges is not None and improved_predictions is not None:
+        if structure_edges is not None:
             # Use single LP split for large OGB graphs (rebuilding is expensive)
             lp_seed = lp_seeds[0]
             try:
                 train_pos, val_pos, test_pos, train_edge_index, val_neg, test_neg = create_link_prediction_split(
                     data.edge_index, seed=lp_seed, val_ratio=0.02, test_ratio=0.05
                 )
-                
-                # Build canonical edge sets
-                train_edge_set = set()
-                for i in range(train_edge_index.shape[1]):
-                    u, v = int(train_edge_index[0, i].item()), int(train_edge_index[1, i].item())
-                    if u < v:
-                        train_edge_set.add((u, v))
-                    else:
-                        train_edge_set.add((v, u))
-                
-                # Build val/test edge sets to exclude from predicted edges
-                val_test_edges = set()
-                for i in range(val_pos.shape[1]):
-                    u, v = int(val_pos[0, i].item()), int(val_pos[1, i].item())
-                    val_test_edges.add((min(u, v), max(u, v)))
-                for i in range(test_pos.shape[1]):
-                    u, v = int(test_pos[0, i].item()), int(test_pos[1, i].item())
-                    val_test_edges.add((min(u, v), max(u, v)))
-                
-                # Keep train-only structural edges
-                train_structure = {k: v for k, v in structure_edges.items() if k in train_edge_set}
-                
-                # Keep predicted edges EXCEPT those in val/test sets
-                train_predicted = {k: v for k, v in improved_predictions.items() if k not in val_test_edges}
-                
-                # Fuse train-only edges
-                train_fused = dict(train_structure)
-                for edge, sim in train_predicted.items():
-                    if edge in train_fused:
-                        train_fused[edge] = 1.0 + 1.0 * sim
-                    else:
-                        train_fused[edge] = 0.75 * sim
-                
-                # Compute embeddings on train-only graph
+                _, train_predicted, train_fused = prepare_train_link_prediction_edges(
+                    train_edge_index=train_edge_index,
+                    val_pos=val_pos,
+                    test_pos=test_pos,
+                    structure_edges=structure_edges,
+                    predicted_edges=predicted_edges,
+                    overlap_scale=lp_overlap_scale,
+                    new_scale=lp_new_scale,
+                )
                 num_nodes = int(data.edge_index.max()) + 1
-                runner = LouvainNERunner(REPO_ROOT, num_nodes, 256)
-                train_embeddings = normalize_rows(runner.embed(train_fused, seed + 10000))
-                
+                runner = LouvainNERunner(REPO_ROOT, num_nodes, lp_embedding_dim)
+                train_embeddings = build_link_prediction_embeddings(
+                    runner=runner,
+                    fused_edges=train_fused,
+                    predicted_edges=train_predicted,
+                    seed=seed + 10000,
+                    feature_matrix=feature_matrix,
+                    feature_dim=lp_feature_dim,
+                    attention_gamma=lp_attention_gamma,
+                    attention_temperature=lp_attention_temperature,
+                )
                 lp_metrics = compute_link_prediction_metrics(train_embeddings, test_pos, test_neg)
                 link_auc_values.append(lp_metrics["link_auc"])
                 link_ap_values.append(lp_metrics["link_ap"])
-            except Exception as e:
+            except Exception:
                 pass
 
         if link_auc_values:
@@ -239,14 +231,16 @@ def evaluate_ogb_with_timing(
     for key in ["val_micro_f1", "val_macro_f1", "test_micro_f1", "test_macro_f1", "link_auc", "link_ap"]:
         values = [run.get(key, 0.0) for run in runs]
         result[f"{key}_mean"] = float(sum(values) / len(values)) if values else 0.0
-        std = (sum((v - result[f"{key}_mean"]) ** 2 for v in values) / len(values)) ** 0.5 if values else 0.0
+        # Use Bessel's correction (ddof=1) for unbiased sample std estimate
+        std = (sum((v - result[f"{key}_mean"]) ** 2 for v in values) / max(len(values) - 1, 1)) ** 0.5 if values else 0.0
         result[f"{key}_std"] = float(std)
 
     result["setup_time_seconds"] = float(setup_time_seconds)
     for key in ["embedding_time_seconds", "classifier_time_seconds", "per_seed_eval_time_seconds"]:
         values = [run.get(key, 0.0) for run in runs]
         result[f"{key}_mean"] = float(sum(values) / len(values)) if values else 0.0
-        std = (sum((v - result[f"{key}_mean"]) ** 2 for v in values) / len(values)) ** 0.5 if values else 0.0
+        # Use Bessel's correction (ddof=1) for unbiased sample std estimate
+        std = (sum((v - result[f"{key}_mean"]) ** 2 for v in values) / max(len(values) - 1, 1)) ** 0.5 if values else 0.0
         result[f"{key}_std"] = float(std)
     result["pipeline_time_seconds_mean"] = result["per_seed_eval_time_seconds_mean"]
     result["pipeline_time_seconds_std"] = result["per_seed_eval_time_seconds_std"]
@@ -315,7 +309,14 @@ def benchmark_ogb_dataset(
         improved_embedding_fn,
         setup_time_seconds=improved_setup_time_seconds,
         structure_edges=structure_edges,
-        improved_predictions=improved_predictions if use_attributes else None,
+        predicted_edges=improved_predictions if use_attributes else {},
+        feature_matrix=data.x if use_attributes else None,
+        lp_overlap_scale=1.0,
+        lp_new_scale=0.75,
+        lp_attention_gamma=0.0,
+        lp_attention_temperature=1.0,
+        lp_feature_dim=projection_dim if use_attributes else 0,
+        lp_embedding_dim=embedding_dim,
     )
 
     def baseline_embedding_fn(seed: int) -> torch.Tensor:
@@ -333,7 +334,14 @@ def benchmark_ogb_dataset(
         baseline_embedding_fn,
         setup_time_seconds=0.0,
         structure_edges=structure_edges,
-        improved_predictions=None,  # Baseline has no predictions
+        predicted_edges={},
+        feature_matrix=None,
+        lp_overlap_scale=1.0,
+        lp_new_scale=1.0,
+        lp_attention_gamma=0.0,
+        lp_attention_temperature=1.0,
+        lp_feature_dim=0,
+        lp_embedding_dim=embedding_dim,
     )
     
     payload = {

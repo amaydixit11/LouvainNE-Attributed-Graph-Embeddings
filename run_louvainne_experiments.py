@@ -410,6 +410,101 @@ def compute_link_prediction_metrics(
     return {"link_auc": auc, "link_ap": ap}
 
 
+def prepare_train_link_prediction_edges(
+    train_edge_index: torch.Tensor,
+    val_pos: torch.Tensor,
+    test_pos: torch.Tensor,
+    structure_edges: Dict[Tuple[int, int], float],
+    predicted_edges: Dict[Tuple[int, int], float] | None,
+    overlap_scale: float,
+    new_scale: float,
+) -> Tuple[Dict[Tuple[int, int], float], Dict[Tuple[int, int], float], Dict[Tuple[int, int], float]]:
+    train_edge_set = set()
+    for i in range(train_edge_index.shape[1]):
+        u, v = int(train_edge_index[0, i].item()), int(train_edge_index[1, i].item())
+        edge = (u, v) if u < v else (v, u)
+        train_edge_set.add(edge)
+
+    val_test_edges = set()
+    for edges in (val_pos, test_pos):
+        for i in range(edges.shape[1]):
+            u, v = int(edges[0, i].item()), int(edges[1, i].item())
+            val_test_edges.add((u, v) if u < v else (v, u))
+
+    train_structure = {edge: weight for edge, weight in structure_edges.items() if edge in train_edge_set}
+    candidate_predicted = predicted_edges or {}
+    train_predicted = {
+        edge: weight
+        for edge, weight in candidate_predicted.items()
+        if edge not in val_test_edges
+    }
+
+    train_fused = dict(train_structure)
+    for edge, sim in train_predicted.items():
+        if edge in train_fused:
+            train_fused[edge] = 1.0 + overlap_scale * sim
+        else:
+            train_fused[edge] = new_scale * sim
+
+    return train_structure, train_predicted, train_fused
+
+
+def apply_sparse_attention_to_embeddings(
+    embeddings: torch.Tensor,
+    edge_scores: Dict[Tuple[int, int], float],
+    gamma: float,
+    temperature: float,
+) -> torch.Tensor:
+    if gamma <= 0.0 or not edge_scores:
+        return normalize_rows(embeddings)
+
+    num_nodes = embeddings.shape[0]
+    adjacency: List[List[Tuple[int, float]]] = [[] for _ in range(num_nodes)]
+    for (u, v), score in edge_scores.items():
+        logit = float(score) / temperature
+        adjacency[u].append((v, logit))
+        adjacency[v].append((u, logit))
+
+    refined = torch.empty_like(embeddings)
+    for node_id, neighbors in enumerate(adjacency):
+        indices = [node_id] + [neighbor for neighbor, _ in neighbors]
+        logits = torch.tensor(
+            [1.0 / temperature] + [score for _, score in neighbors],
+            dtype=embeddings.dtype,
+        )
+        weights = torch.softmax(logits, dim=0).unsqueeze(1)
+        refined[node_id] = (weights * embeddings[indices]).sum(dim=0)
+
+    return normalize_rows((1.0 - gamma) * embeddings + gamma * refined)
+
+
+def build_link_prediction_embeddings(
+    runner,
+    fused_edges: Dict[Tuple[int, int], float],
+    predicted_edges: Dict[Tuple[int, int], float] | None,
+    seed: int,
+    feature_matrix: torch.Tensor | None,
+    feature_dim: int,
+    attention_gamma: float,
+    attention_temperature: float,
+) -> torch.Tensor:
+    graph_embedding = normalize_rows(runner.embed(fused_edges, seed))
+    graph_embedding = apply_sparse_attention_to_embeddings(
+        graph_embedding,
+        predicted_edges or {},
+        gamma=attention_gamma,
+        temperature=attention_temperature,
+    )
+    if feature_matrix is None or feature_dim <= 0:
+        return graph_embedding
+
+    projection_dim = min(feature_dim, feature_matrix.shape[0] - 1, feature_matrix.shape[1])
+    if projection_dim <= 0:
+        return graph_embedding
+    feature_embedding = normalize_rows(low_rank_projection(feature_matrix, projection_dim))
+    return concat_features([graph_embedding, feature_embedding])
+
+
 class LinearProbe(nn.Module):
     def __init__(self, in_dim: int, num_classes: int) -> None:
         super().__init__()
@@ -608,7 +703,8 @@ def summarize_runs(name: str, config: Dict[str, object], runs: List[Dict[str, fl
     ]:
         values = [run[key] for run in runs]
         result[f"{key}_mean"] = float(np.mean(values))
-        result[f"{key}_std"] = float(np.std(values))
+        # Use ddof=1 for unbiased sample std estimate
+        result[f"{key}_std"] = float(np.std(values, ddof=1))
     return result
 
 
@@ -621,7 +717,8 @@ def attach_timing_summary(
     for key in ["embedding_time_seconds", "classifier_time_seconds", "per_seed_eval_time_seconds"]:
         values = [run[key] for run in runs]
         result[f"{key}_mean"] = float(np.mean(values))
-        result[f"{key}_std"] = float(np.std(values))
+        # Use ddof=1 for unbiased sample std estimate
+        result[f"{key}_std"] = float(np.std(values, ddof=1))
     # Keep the previous field name as a compatibility alias for existing consumers.
     result["pipeline_time_seconds_mean"] = result["per_seed_eval_time_seconds_mean"]
     result["pipeline_time_seconds_std"] = result["per_seed_eval_time_seconds_std"]

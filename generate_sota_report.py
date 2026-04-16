@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Comprehensive SOTA comparison and report generation.
-Generates tables comparing LouvainNE with published GNN results across all datasets.
-Covers Node Classification, Link Prediction, and Runtime.
+Generate sourced comparison tables for node classification, link prediction,
+and runtime using saved repo artifacts plus published leaderboard values.
 """
 
 from __future__ import annotations
@@ -13,402 +12,322 @@ from typing import Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent
 
-# Published SOTA results from OpenCodePapers leaderboard
-# Source: https://opencodepapers-b7572d.gitlab.io/benchmarks/node-classification-on-cora-with-public-split.html
-# IMPORTANT: These numbers are from published papers using the official Cora public split (140 train).
-# Direct comparison should account for potential differences in preprocessing or evaluation details.
-SOTA_NODE_CLASSIFICATION = {
-    "Cora": {
-        "OGC": {"micro_f1": 0.869, "macro_f1": None, "training_free": False, "ref": "Wang et al. 2023 (OGC)"},
-        "GCN-TV": {"micro_f1": 0.863, "macro_f1": None, "training_free": False, "ref": "Liu et al. 2023"},
-        "GCNII": {"micro_f1": 0.855, "macro_f1": None, "training_free": False, "ref": "Chen et al. 2020"},
-        "GRAND": {"micro_f1": 0.854, "macro_f1": None, "training_free": False, "ref": "Feng et al. 2020"},
-        "CPF-ind-APPNP": {"micro_f1": 0.853, "macro_f1": None, "training_free": False, "ref": "Liu et al. 2021"},
-        "GCN (tuned)": {"micro_f1": 0.851, "macro_f1": None, "training_free": False, "ref": "Luo et al. 2024 (tunedGNN)"},
-        "AIR-GCN": {"micro_f1": 0.847, "macro_f1": None, "training_free": False, "ref": "Wang et al. 2019"},
-        "H-GCN": {"micro_f1": 0.845, "macro_f1": None, "training_free": False, "ref": "Zhu et al. 2019"},
-        "DAGNN": {"micro_f1": 0.844, "macro_f1": None, "training_free": False, "ref": "Liu et al. 2020"},
-        "G-APPNP": {"micro_f1": 0.8431, "macro_f1": None, "training_free": False, "ref": "Zhu et al. 2019"},
-        "SuperGAT MX": {"micro_f1": 0.843, "macro_f1": None, "training_free": False, "ref": "Kim & Oh 2022"},
-        "DSGCN": {"micro_f1": 0.842, "macro_f1": None, "training_free": False, "ref": "Balçılar et al. 2020"},
-        "LDS-GNN": {"micro_f1": 0.841, "macro_f1": None, "training_free": False, "ref": "Franceschi et al. 2019"},
-        "GraphMix": {"micro_f1": 0.8394, "macro_f1": None, "training_free": False, "ref": "Verma et al. 2019"},
-        "GCN+GAugO": {"micro_f1": 0.836, "macro_f1": None, "training_free": False, "ref": "Zhao et al. 2020"},
-        "GGCM": {"micro_f1": 0.836, "macro_f1": None, "training_free": False, "ref": "Wang et al. 2023"},
-        "GAT": {"micro_f1": 0.830, "macro_f1": None, "training_free": False, "ref": "Veličković et al. 2017"},
-        "GEM": {"micro_f1": 0.8305, "macro_f1": None, "training_free": False, "ref": "Chen 2023"},
-        "SSP": {"micro_f1": 0.8284, "macro_f1": None, "training_free": False, "ref": "Izadi et al. 2020"},
-        "GraphSAGE": {"micro_f1": 0.745, "macro_f1": None, "training_free": False, "ref": "Hamilton et al. 2017"},
-    },
-    "CiteSeer": {
-        "GCN": {"micro_f1": 0.703, "macro_f1": None, "training_free": False, "ref": "Kipf & Welling 2017"},
-        "GAT": {"micro_f1": 0.725, "macro_f1": None, "training_free": False, "ref": "Veličković et al. 2018"},
-        "APPNP": {"micro_f1": 0.742, "macro_f1": None, "training_free": False, "ref": "Klicpera et al. 2019"},
-        "GraphSAGE": {"micro_f1": 0.708, "macro_f1": None, "training_free": False, "ref": "Hamilton et al. 2017"},
-    },
-    "PubMed": {
-        "GCN": {"micro_f1": 0.790, "macro_f1": None, "training_free": False, "ref": "Kipf & Welling 2017"},
-        "GAT": {"micro_f1": 0.790, "macro_f1": None, "training_free": False, "ref": "Veličković et al. 2018"},
-        "APPNP": {"micro_f1": 0.809, "macro_f1": None, "training_free": False, "ref": "Klicpera et al. 2019"},
-        "GraphSAGE": {"micro_f1": 0.785, "macro_f1": None, "training_free": False, "ref": "Hamilton et al. 2017"},
-    },
-    "BlogCatalog": {
-        "DeepWalk": {"micro_f1": 0.329, "macro_f1": 0.197, "training_free": True, "ref": "Perozzi et al. 2014"},
-        "node2vec": {"micro_f1": 0.336, "macro_f1": 0.203, "training_free": True, "ref": "Grover & Leskovec 2016"},
-        "LINE": {"micro_f1": 0.321, "macro_f1": 0.189, "training_free": True, "ref": "Tang et al. 2015"},
-    },
-    "ogbn-arxiv": {
-        "GCN": {"micro_f1": 0.7169, "macro_f1": None, "training_free": False, "ref": "OGB Leaderboard"},
-        "GAT": {"micro_f1": 0.7281, "macro_f1": None, "training_free": False, "ref": "OGB Leaderboard"},
-        "GraphSAGE": {"micro_f1": 0.7230, "macro_f1": None, "training_free": False, "ref": "OGB Leaderboard"},
-        "APPNP": {"micro_f1": 0.7360, "macro_f1": None, "training_free": False, "ref": "OGB Leaderboard"},
-        "SGC": {"micro_f1": 0.7150, "macro_f1": None, "training_free": False, "ref": "OGB Leaderboard"},
-    },
-    "ogbn-products": {
-        "GCN": {"micro_f1": 0.7620, "macro_f1": None, "training_free": False, "ref": "OGB Leaderboard"},
-        "GraphSAGE": {"micro_f1": 0.7850, "macro_f1": None, "training_free": False, "ref": "OGB Leaderboard"},
-        "GAT": {"micro_f1": 0.7710, "macro_f1": None, "training_free": False, "ref": "OGB Leaderboard"},
-    },
+TASK_SOURCES = {
+    ("Cora", "node"): "https://opencodepapers-b7572d.gitlab.io/benchmarks/node-classification-on-cora-with-public-split.html",
+    ("Cora", "link"): "https://opencodepapers-b7572d.gitlab.io/benchmarks/link-prediction-on-cora.html",
+    ("CiteSeer", "node"): "https://opencodepapers-b7572d.gitlab.io/benchmarks/node-classification-on-citeseer-full-supervised.html",
+    ("CiteSeer", "link"): "https://opencodepapers-b7572d.gitlab.io/benchmarks/link-prediction-on-citeseer.html",
+    ("PubMed", "node"): "https://opencodepapers-b7572d.gitlab.io/benchmarks/node-classification-on-pubmed-full-supervised.html",
+    ("PubMed", "link"): "https://opencodepapers-b7572d.gitlab.io/benchmarks/link-prediction-on-pubmed.html",
 }
 
-SOTA_LINK_PREDICTION = {
-    # NOTE: These are from Kipf & Welling 2016 (Variational Graph Auto-Encoders)
-    # Protocol: 10% train edges, 5% validation, 85% test with negative sampling
-    # Our custom protocol follows similar ratios but may differ in exact implementation
-    "Cora": {
-        "GCN-AE": {"auc": 0.8780, "ap": 0.8920, "training_free": False, "ref": "Kipf & Welling 2016"},
-        "GAE": {"auc": 0.8740, "ap": 0.8890, "training_free": False, "ref": "Kipf & Welling 2016"},
-        "VGAE": {"auc": 0.9140, "ap": 0.9230, "training_free": False, "ref": "Kipf & Welling 2016"},
-    },
-    "CiteSeer": {
-        "GCN-AE": {"auc": 0.8180, "ap": 0.8350, "training_free": False, "ref": "Kipf & Welling 2016"},
-        "GAE": {"auc": 0.8080, "ap": 0.8270, "training_free": False, "ref": "Kipf & Welling 2016"},
-        "VGAE": {"auc": 0.8630, "ap": 0.8810, "training_free": False, "ref": "Kipf & Welling 2016"},
-    },
+SOTA_NODE_CLASSIFICATION: Dict[str, List[Dict[str, object]]] = {
+    "Cora": [
+        {"model": "OGC", "accuracy": 0.869, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "GCN-TV", "accuracy": 0.863, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "GCNII", "accuracy": 0.855, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "GRAND", "accuracy": 0.854, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "CPF-ind-APPNP", "accuracy": 0.853, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "GCN", "accuracy": 0.851, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "AIR-GCN", "accuracy": 0.847, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "H-GCN", "accuracy": 0.845, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "DAGNN", "accuracy": 0.844, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "GAT", "accuracy": 0.830, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "GraphSAGE", "accuracy": 0.745, "reference": "OpenCodePapers", "training_free": False},
+    ],
+    "CiteSeer": [
+        {"model": "APPNP", "accuracy": 0.742, "reference": "paper baseline", "training_free": False},
+        {"model": "GAT", "accuracy": 0.725, "reference": "paper baseline", "training_free": False},
+        {"model": "GraphSAGE", "accuracy": 0.708, "reference": "paper baseline", "training_free": False},
+        {"model": "GCN", "accuracy": 0.703, "reference": "paper baseline", "training_free": False},
+    ],
+    "PubMed": [
+        {"model": "GraphSAGE+DropEdge", "accuracy": 0.917, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "ASGCN", "accuracy": 0.906, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "FDGATII", "accuracy": 0.903524, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "GCNII", "accuracy": 0.903, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "FastGCN", "accuracy": 0.880, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "GraphSAGE", "accuracy": 0.871, "reference": "OpenCodePapers", "training_free": False},
+    ],
+    "BlogCatalog": [
+        {"model": "node2vec", "accuracy": 0.336, "reference": "classic baseline", "training_free": True},
+        {"model": "DeepWalk", "accuracy": 0.329, "reference": "classic baseline", "training_free": True},
+        {"model": "LINE", "accuracy": 0.321, "reference": "classic baseline", "training_free": True},
+    ],
 }
+
+SOTA_LINK_PREDICTION: Dict[str, List[Dict[str, object]]] = {
+    "Cora": [
+        {"model": "NESS", "auc": 0.9846, "ap": 0.9871, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "WalkPooling", "auc": 0.9590, "ap": 0.9600, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "NBFNet", "auc": 0.9560, "ap": 0.9620, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "VGNAE", "auc": 0.9560, "ap": 0.9570, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "VGAE", "auc": 0.9140, "ap": 0.9230, "reference": "paper baseline", "training_free": False},
+    ],
+    "CiteSeer": [
+        {"model": "NESS", "auc": 0.9943, "ap": 0.9950, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "VGNAE", "auc": 0.9700, "ap": 0.9710, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "Graph InfoClust", "auc": 0.9700, "ap": 0.9680, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "GNAE", "auc": 0.9650, "ap": 0.9700, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "VGAE", "auc": 0.8630, "ap": 0.8810, "reference": "paper baseline", "training_free": False},
+    ],
+    "PubMed": [
+        {"model": "NESS", "auc": 0.9810, "ap": 0.9810, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "WalkPooling", "auc": 0.9640, "ap": 0.9650, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "SEAL", "auc": 0.9680, "ap": 0.9690, "reference": "OpenCodePapers", "training_free": False},
+        {"model": "NBFNet", "auc": 0.9580, "ap": 0.9610, "reference": "OpenCodePapers", "training_free": False},
+    ],
+}
+
+
+def load_json(path: Path) -> Optional[dict]:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def load_benchmark_results() -> Dict[str, dict]:
-    """Load all available benchmark results from the results directory."""
-    results = {}
-    
+    results: Dict[str, dict] = {}
+
     summary_json = REPO_ROOT / "results" / "benchmark_summary.json"
-    if summary_json.exists():
-        payloads = json.loads(summary_json.read_text(encoding="utf-8"))
-        for payload in payloads:
-            dataset_name = payload["dataset"]
-            results[dataset_name] = {
-                "baseline": payload["results"]["baseline"],
-                "improved": payload["results"]["improved"],
-                "num_nodes": payload.get("num_nodes", 0),
-                "num_edges": payload.get("num_edges_directed", 0),
-                "num_features": payload.get("num_features", 0),
-                "num_classes": payload.get("num_classes", 0),
-            }
-    
-    for ogb_dir in REPO_ROOT.glob("results/ogbn_*"):
-        ogb_results = ogb_dir / "ogb_results.json"
-        if ogb_results.exists():
-            payload = json.loads(ogb_results.read_text(encoding="utf-8"))
-            dataset_name = payload["dataset"]
-            results[dataset_name] = {
-                "baseline": payload["results"]["baseline_structure"],
-                "improved": payload["results"]["improved"],
-                "num_nodes": payload.get("num_nodes", 0),
-                "num_edges": payload.get("num_edges", 0),
-                "num_features": payload.get("num_features", 0),
-                "num_classes": payload.get("num_classes", 0),
-            }
-    
+    payloads = load_json(summary_json) or []
+    for payload in payloads:
+        dataset_name = payload["dataset"]
+        results[dataset_name] = {
+            "baseline": payload["results"]["baseline"],
+            "improved": payload["results"]["improved"],
+            "num_nodes": payload.get("num_nodes", 0),
+            "num_edges": payload.get("num_edges_directed", 0),
+            "num_features": payload.get("num_features", 0),
+            "num_classes": payload.get("num_classes", 0),
+            "source": payload.get("source", ""),
+        }
+
+    for dataset_name in ["Cora", "CiteSeer", "PubMed", "BlogCatalog"]:
+        if dataset_name in results:
+            continue
+        payload = load_json(REPO_ROOT / "results" / dataset_name / "comparison_results.json")
+        if payload is None:
+            continue
+        results[dataset_name] = {
+            "baseline": payload["results"]["baseline"],
+            "improved": payload["results"]["improved"],
+            "num_nodes": payload.get("num_nodes", 0),
+            "num_edges": payload.get("num_edges_directed", 0),
+            "num_features": payload.get("num_features", 0),
+            "num_classes": payload.get("num_classes", 0),
+            "source": payload.get("source", ""),
+        }
+
+    ogb_summary = load_json(REPO_ROOT / "results" / "ogb_benchmark_summary.json") or []
+    for payload in ogb_summary:
+        dataset_name = payload["dataset"]
+        results[dataset_name] = {
+            "baseline": payload["results"]["baseline_structure"],
+            "improved": payload["results"]["improved"],
+            "num_nodes": payload.get("num_nodes", 0),
+            "num_edges": payload.get("num_edges", 0),
+            "num_features": payload.get("num_features", 0),
+            "num_classes": payload.get("num_classes", 0),
+            "source": "",
+        }
+
     return results
 
 
-def generate_node_classification_table(
-    dataset_name: str,
-    our_results: Optional[dict] = None,
-) -> List[str]:
-    """Generate markdown table for node classification."""
+def fmt_metric(value: Optional[float], as_percent: bool = False) -> str:
+    if value is None:
+        return "N/A"
+    return f"{value * 100:.2f}%" if as_percent else f"{value:.4f}"
+
+
+def fmt_time(value: Optional[float]) -> str:
+    if value is None:
+        return "N/A"
+    return f"{value:.2f}"
+
+
+def best_node_model(dataset_name: str) -> Optional[Dict[str, object]]:
+    models = SOTA_NODE_CLASSIFICATION.get(dataset_name, [])
+    if not models:
+        return None
+    return max(models, key=lambda item: float(item["accuracy"]))
+
+
+def best_link_model(dataset_name: str) -> Optional[Dict[str, object]]:
+    models = SOTA_LINK_PREDICTION.get(dataset_name, [])
+    if not models:
+        return None
+    return max(models, key=lambda item: float(item["auc"]))
+
+
+def build_node_table(results: Dict[str, dict]) -> List[str]:
     lines = [
-        f"### {dataset_name}: Node Classification",
+        "## Node Classification: Large Comparison Table",
         "",
-        "| Method | Micro-F1 | Macro-F1 | Training-Free? | Reference |",
-        "|---|---:|---:|---|---|",
+        "| Dataset | Model | Type | Accuracy | Our Improved | Gap vs Ours | Per-Seed Time (s) | External Runtime | Source |",
+        "|---|---|---|---:|---:|---:|---:|---|---|",
     ]
-    
-    if dataset_name in SOTA_NODE_CLASSIFICATION:
-        sota = SOTA_NODE_CLASSIFICATION[dataset_name]
-        for method, metrics in sorted(sota.items(), key=lambda x: x[1]["micro_f1"], reverse=True):
-            macro = f"{metrics['macro_f1']:.4f}" if metrics['macro_f1'] is not None else "N/A"
-            tf = "✓" if metrics['training_free'] else "✗"
-            lines.append(
-                f"| {method} (GNN) | {metrics['micro_f1']:.4f} | {macro} | {tf} | {metrics['ref']} |"
+
+    body_lines: List[str] = []
+    for dataset_name in ["Cora", "CiteSeer", "PubMed", "BlogCatalog"]:
+        our = results.get(dataset_name)
+        our_acc = our["improved"]["test_micro_f1_mean"] if our else None
+        our_time = our["improved"]["per_seed_eval_time_seconds_mean"] if our else None
+        source_url = TASK_SOURCES.get((dataset_name, "node"), "N/A")
+        for item in SOTA_NODE_CLASSIFICATION.get(dataset_name, []):
+            gap = (float(item["accuracy"]) - our_acc) if our_acc is not None else None
+            body_lines.append(
+                f"| {dataset_name} | {item['model']} | External | "
+                f"{fmt_metric(float(item['accuracy']), as_percent=True)} | "
+                f"{fmt_metric(our_acc, as_percent=True)} | "
+                f"{fmt_metric(gap, as_percent=True) if gap is not None else 'N/A'} | "
+                f"{fmt_time(our_time)} | "
+                f"N/A | {source_url} |"
             )
-    
-    if our_results:
-        baseline = our_results["baseline"]
-        improved = our_results["improved"]
-        
-        lines.append(
-            f"| **LouvainNE (structure)** | "
-            f"**{baseline['test_micro_f1_mean']:.4f} ± {baseline['test_micro_f1_std']:.4f}** | "
-            f"{baseline['test_macro_f1_mean']:.4f} ± {baseline['test_macro_f1_std']:.4f} | "
-            f"✓ | **Ours** |"
+        if our:
+            baseline = our["baseline"]
+            improved = our["improved"]
+            body_lines.append(
+                f"| {dataset_name} | LouvainNE (structure) | Ours | "
+                f"{fmt_metric(baseline['test_micro_f1_mean'], as_percent=True)} | "
+                f"{fmt_metric(improved['test_micro_f1_mean'], as_percent=True)} | "
+                f"{fmt_metric(baseline['test_micro_f1_mean'] - improved['test_micro_f1_mean'], as_percent=True)} | "
+                f"{baseline['per_seed_eval_time_seconds_mean']:.2f} | repo measured | local results |"
+            )
+            body_lines.append(
+                f"| {dataset_name} | LouvainNE (improved) | Ours | "
+                f"{fmt_metric(improved['test_micro_f1_mean'], as_percent=True)} | "
+                f"{fmt_metric(improved['test_micro_f1_mean'], as_percent=True)} | "
+                f"{fmt_metric(0.0, as_percent=True)} | "
+                f"{improved['per_seed_eval_time_seconds_mean']:.2f} | repo measured | local results |"
+            )
+    return lines + body_lines + [""]
+
+
+def build_link_table(results: Dict[str, dict]) -> List[str]:
+    lines = [
+        "## Link Prediction: Large Comparison Table",
+        "",
+        "| Dataset | Model | Type | AUC | AP | Our Improved AUC | Gap vs Ours | Per-Seed Time (s) | Source |",
+        "|---|---|---|---:|---:|---:|---:|---:|---|",
+    ]
+
+    for dataset_name in ["Cora", "CiteSeer", "PubMed", "BlogCatalog"]:
+        our = results.get(dataset_name)
+        our_auc = our["improved"].get("link_auc_mean") if our else None
+        our_time = our["improved"]["per_seed_eval_time_seconds_mean"] if our else None
+        source_url = TASK_SOURCES.get((dataset_name, "link"), "N/A")
+        for item in SOTA_LINK_PREDICTION.get(dataset_name, []):
+            gap = (float(item["auc"]) - our_auc) if our_auc is not None else None
+            lines.append(
+                f"| {dataset_name} | {item['model']} | External | "
+                f"{fmt_metric(float(item['auc']))} | "
+                f"{fmt_metric(float(item['ap']))} | "
+                f"{fmt_metric(our_auc)} | "
+                f"{fmt_metric(gap) if gap is not None else 'N/A'} | "
+                f"{fmt_time(our_time)} | "
+                f"{source_url} |"
+            )
+        if our:
+            baseline = our["baseline"]
+            improved = our["improved"]
+            lines.append(
+                f"| {dataset_name} | LouvainNE (structure) | Ours | "
+                f"{fmt_metric(baseline.get('link_auc_mean'))} | "
+                f"{fmt_metric(baseline.get('link_ap_mean'))} | "
+                f"{fmt_metric(improved.get('link_auc_mean'))} | "
+                f"{fmt_metric((baseline.get('link_auc_mean') or 0.0) - (improved.get('link_auc_mean') or 0.0))} | "
+                f"{baseline['per_seed_eval_time_seconds_mean']:.2f} | local results |"
+            )
+            lines.append(
+                f"| {dataset_name} | LouvainNE (improved) | Ours | "
+                f"{fmt_metric(improved.get('link_auc_mean'))} | "
+                f"{fmt_metric(improved.get('link_ap_mean'))} | "
+                f"{fmt_metric(improved.get('link_auc_mean'))} | "
+                f"{fmt_metric(0.0)} | "
+                f"{improved['per_seed_eval_time_seconds_mean']:.2f} | local results |"
+            )
+    return lines + [""]
+
+
+def build_best_summary_table(results: Dict[str, dict]) -> List[str]:
+    lines = [
+        "## Best-Per-Dataset Summary",
+        "",
+        "| Dataset | Best External Node Model | Node Acc | Our Node Acc | Best External Link Model | Link AUC / AP | Our Link AUC / AP | Our Time (s) |",
+        "|---|---|---:|---:|---|---:|---:|---:|",
+    ]
+    for dataset_name in ["Cora", "CiteSeer", "PubMed", "BlogCatalog"]:
+        our = results.get(dataset_name)
+        node_best = best_node_model(dataset_name)
+        link_best = best_link_model(dataset_name)
+        our_node = our["improved"]["test_micro_f1_mean"] if our else None
+        our_link_auc = our["improved"].get("link_auc_mean") if our else None
+        our_link_ap = our["improved"].get("link_ap_mean") if our else None
+        our_time = our["improved"]["per_seed_eval_time_seconds_mean"] if our else None
+        node_model = node_best["model"] if node_best else "N/A"
+        node_score = fmt_metric(float(node_best["accuracy"]), as_percent=True) if node_best else "N/A"
+        link_model = link_best["model"] if link_best else "N/A"
+        link_score = (
+            f"{fmt_metric(float(link_best['auc']))} / {fmt_metric(float(link_best['ap']))}"
+            if link_best else "N/A"
+        )
+        our_link_score = (
+            f"{fmt_metric(our_link_auc)} / {fmt_metric(our_link_ap)}"
+            if our_link_auc is not None and our_link_ap is not None else "N/A"
         )
         lines.append(
-            f"| **LouvainNE (improved)** | "
-            f"**{improved['test_micro_f1_mean']:.4f} ± {improved['test_micro_f1_std']:.4f}** | "
-            f"{improved['test_macro_f1_mean']:.4f} ± {improved['test_macro_f1_std']:.4f} | "
-            f"✓ | **Ours** |"
+            f"| {dataset_name} | {node_model} | {node_score} | {fmt_metric(our_node, as_percent=True)} | "
+            f"{link_model} | {link_score} | {our_link_score} | "
+            f"{fmt_time(our_time)} |"
         )
-    
-    lines.append("")
-    return lines
+    return lines + [""]
 
 
-def generate_link_prediction_table(
-    dataset_name: str,
-    our_results: Optional[dict] = None,
-) -> List[str]:
-    """Generate markdown table for link prediction."""
+def build_runtime_notes(results: Dict[str, dict]) -> List[str]:
     lines = [
-        f"### {dataset_name}: Link Prediction",
+        "## Runtime Notes",
         "",
-        "| Method | AUC | AP | Training-Free? | Reference |",
-        "|---|---:|---:|---|---|",
+        "| Dataset | Our Structure Time (s) | Our Improved Time (s) | External Runtime Availability |",
+        "|---|---:|---:|---|",
     ]
-    
-    if dataset_name in SOTA_LINK_PREDICTION:
-        sota = SOTA_LINK_PREDICTION[dataset_name]
-        for method, metrics in sorted(sota.items(), key=lambda x: x[1]["auc"], reverse=True):
-            tf = "✓" if metrics['training_free'] else "✗"
-            lines.append(
-                f"| {method} (GNN) | {metrics['auc']:.4f} | {metrics['ap']:.4f} | {tf} | {metrics['ref']} |"
-            )
-    
-    if our_results:
-        baseline = our_results["baseline"]
-        improved = our_results["improved"]
-        
-        if baseline.get("link_auc_mean", 0) > 0:
-            lines.append(
-                f"| **LouvainNE (structure)** | "
-                f"**{baseline['link_auc_mean']:.4f} ± {baseline['link_auc_std']:.4f}** | "
-                f"{baseline['link_ap_mean']:.4f} ± {baseline['link_ap_std']:.4f} | "
-                f"✓ | **Ours** |"
-            )
-        if improved.get("link_auc_mean", 0) > 0:
-            lines.append(
-                f"| **LouvainNE (improved)** | "
-                f"**{improved['link_auc_mean']:.4f} ± {improved['link_auc_std']:.4f}** | "
-                f"{improved['link_ap_mean']:.4f} ± {improved['link_ap_std']:.4f} | "
-                f"✓ | **Ours** |"
-            )
-    
-    lines.append("")
-    return lines
+    for dataset_name in ["Cora", "CiteSeer", "PubMed", "BlogCatalog"]:
+        our = results.get(dataset_name)
+        if not our:
+            continue
+        lines.append(
+            f"| {dataset_name} | {our['baseline']['per_seed_eval_time_seconds_mean']:.2f} | "
+            f"{our['improved']['per_seed_eval_time_seconds_mean']:.2f} | "
+            "Not consistently reported on sourced leaderboard pages |"
+        )
+    return lines + [""]
 
 
-def generate_runtime_table(
-    dataset_name: str,
-    our_results: Optional[dict] = None,
-) -> List[str]:
-    """Generate markdown table for runtime comparison."""
-    if not our_results:
-        return []
-    
-    baseline = our_results["baseline"]
-    improved = our_results["improved"]
-    
-    speedup_setup = baseline['setup_time_seconds'] / improved['setup_time_seconds'] if improved['setup_time_seconds'] > 0 else float('inf')
-    speedup_eval = baseline['per_seed_eval_time_seconds_mean'] / improved['per_seed_eval_time_seconds_mean'] if improved['per_seed_eval_time_seconds_mean'] > 0 else float('inf')
-    
-    lines = [
-        f"### {dataset_name}: Runtime Comparison",
-        "",
-        "| Metric | Baseline | Improved | Speedup |",
-        "|---|---:|---:|---:|",
-        f"| Setup Time (s) | {baseline['setup_time_seconds']:.2f} | {improved['setup_time_seconds']:.2f} | {speedup_setup:.2f}x |",
-        f"| Per-Seed Eval Time (s) | {baseline['per_seed_eval_time_seconds_mean']:.2f} ± {baseline['per_seed_eval_time_seconds_std']:.2f} | {improved['per_seed_eval_time_seconds_mean']:.2f} ± {improved['per_seed_eval_time_seconds_std']:.2f} | {speedup_eval:.2f}x |",
-        f"| Embedding Time (s) | {baseline['embedding_time_seconds_mean']:.2f} | {improved['embedding_time_seconds_mean']:.2f} | - |",
-        f"| Classifier Time (s) | {baseline['classifier_time_seconds_mean']:.2f} | {improved['classifier_time_seconds_mean']:.2f} | - |",
-        "",
-    ]
-    return lines
-
-
-def generate_dataset_stats_table(
-    dataset_name: str,
-    our_results: Optional[dict] = None,
-) -> List[str]:
-    """Generate dataset statistics table."""
-    if not our_results:
-        return []
-    
-    lines = [
-        f"### {dataset_name}: Dataset Statistics",
-        "",
-        "| Property | Value |",
-        "|---|---|",
-        f"| Nodes | {our_results['num_nodes']:,} |",
-        f"| Edges (directed) | {our_results['num_edges']:,} |",
-        f"| Features | {our_results['num_features']:,} |",
-        f"| Classes | {our_results['num_classes']} |",
-        f"| Avg. Degree | {our_results['num_edges'] / our_results['num_nodes']:.2f} |",
-        "",
-    ]
-    return lines
-
-
-def generate_comprehensive_report(
-    output_path: Path,
-) -> None:
-    """Generate the full comprehensive report."""
+def generate_comprehensive_report(output_path: Path) -> None:
     results = load_benchmark_results()
-    
     lines = [
         "# Comprehensive Benchmark Report: LouvainNE vs SOTA",
         "",
-        "## Executive Summary",
+        "## Scope",
         "",
-        "This report presents a comprehensive comparison of our LouvainNE-based attributed graph embedding method against state-of-the-art GNN approaches across three dimensions:",
+        "This report builds large comparison tables for node classification, link prediction, and runtime.",
+        "External accuracy metrics are sourced from benchmark pages and paper-reported baselines.",
+        "Our metrics and timings come from saved repo artifacts under `results/`.",
         "",
-        "1. **Node Classification**: Micro-F1 and Macro-F1 scores",
-        "2. **Link Prediction**: AUC and Average Precision (AP)",
-        "3. **Runtime**: Setup time, per-seed evaluation time, and scalability",
+        "## Protocol Notes",
         "",
-        "**Key Finding**: Our training-free LouvainNE pipeline achieves competitive accuracy while being orders of magnitude faster than GNN-based methods, especially on large-scale graphs.",
-        "",
-        "**Protocol Disclaimers:**",
-        "- SOTA numbers are from published papers and may use different splits/preprocessing",
-        "- Link prediction uses a custom protocol (10% test, 5% val edge split), similar to but not identical to Kipf & Welling 2016",
-        "- OGB link prediction uses custom protocol on ogbn-* graphs, NOT official ogbl-* evaluation",
-        "- Direct comparison should account for these protocol differences",
-        "",
-        "---",
+        "- External benchmark pages do not provide fully standardized runtime numbers, so external runtime cells are left as `N/A` unless directly available.",
+        "- Our link prediction numbers come from the repo's train/val/test edge split protocol.",
+        "- OpenCodePapers leaderboard protocols may differ from our preprocessing or split details.",
+        "- `BlogCatalog` has strong local results in this repo, but external sourced node/link leaderboards are sparse.",
         "",
     ]
-    
-    dataset_order = ["Cora", "CiteSeer", "PubMed", "BlogCatalog", "ogbn-arxiv", "ogbn-products"]
-    
-    for dataset_name in dataset_order:
-        if dataset_name not in results:
-            continue
-        
-        our_results = results[dataset_name]
-        
-        lines.extend(generate_dataset_stats_table(dataset_name, our_results))
-        lines.extend(generate_node_classification_table(dataset_name, our_results))
-        lines.extend(generate_link_prediction_table(dataset_name, our_results))
-        lines.extend(generate_runtime_table(dataset_name, our_results))
-        
-        lines.append("---")
-        lines.append("")
-    
-    lines.extend([
-        "## Cross-Dataset Summary",
-        "",
-        "### Node Classification Performance",
-        "",
-        "| Dataset | LouvainNE (Structure) | LouvainNE (Improved) | Best GNN | Gap to GNN | Training-Free? |",
-        "|---|---:|---:|---:|---:|---|",
-    ])
-    
-    for dataset_name in dataset_order:
-        if dataset_name not in results:
-            continue
-        
-        our_results = results[dataset_name]
-        baseline = our_results["baseline"]
-        improved = our_results["improved"]
-        
-        best_gnn = 0.0
-        if dataset_name in SOTA_NODE_CLASSIFICATION:
-            best_gnn = max(m["micro_f1"] for m in SOTA_NODE_CLASSIFICATION[dataset_name].values())
-        
-        gap = best_gnn - improved['test_micro_f1_mean'] if best_gnn > 0 else 0.0
-        
-        lines.append(
-            f"| {dataset_name} | {baseline['test_micro_f1_mean']:.4f} | "
-            f"{improved['test_micro_f1_mean']:.4f} | {best_gnn:.4f} | {gap:.4f} | ✓ |"
-        )
-    
-    lines.append("")
-    lines.append("### Link Prediction Performance")
-    lines.append("")
-    lines.append("| Dataset | LouvainNE (Structure) AUC | LouvainNE (Improved) AUC | Best GNN AUC | Gap to GNN |")
-    lines.append("|---|---:|---:|---:|---:|")
-    
-    for dataset_name in dataset_order:
-        if dataset_name not in results:
-            continue
-        
-        our_results = results[dataset_name]
-        baseline = our_results["baseline"]
-        improved = our_results["improved"]
-        
-        if baseline.get("link_auc_mean", 0) > 0:
-            best_gnn_auc = 0.0
-            if dataset_name in SOTA_LINK_PREDICTION:
-                best_gnn_auc = max(m["auc"] for m in SOTA_LINK_PREDICTION[dataset_name].values())
-            
-            gap = best_gnn_auc - improved['link_auc_mean'] if best_gnn_auc > 0 else 0.0
-            
-            lines.append(
-                f"| {dataset_name} | {baseline['link_auc_mean']:.4f} | "
-                f"{improved['link_auc_mean']:.4f} | {best_gnn_auc:.4f} | {gap:.4f} |"
-            )
-    
-    lines.append("")
-    lines.append("### Runtime Scalability")
-    lines.append("")
-    lines.append("| Dataset | Nodes | LouvainNE Time (s) | Est. GNN Time/Epoch (s) | Relative Speed |")
-    lines.append("|---|---:|---:|---:|---:|")
-    
-    gnn_time_estimates = {
-        "Cora": 0.01,
-        "CiteSeer": 0.01,
-        "PubMed": 0.05,
-        "BlogCatalog": 0.1,
-        "ogbn-arxiv": 0.5,
-        "ogbn-products": 5.0,
-    }
-    
-    for dataset_name in dataset_order:
-        if dataset_name not in results:
-            continue
-        
-        our_results = results[dataset_name]
-        improved = our_results["improved"]
-        num_nodes = our_results["num_nodes"]
-        
-        gnn_time = gnn_time_estimates.get(dataset_name, 1.0)
-        louvain_time = improved['per_seed_eval_time_seconds_mean']
-        relative = gnn_time / louvain_time if louvain_time > 0 else float('inf')
-        
-        lines.append(
-            f"| {dataset_name} | {num_nodes:,} | {louvain_time:.2f} | {gnn_time:.2f} | {relative:.2f}x |"
-        )
-    
-    lines.append("")
-    lines.append("---")
-    lines.append("")
-    lines.append("## Conclusions")
-    lines.append("")
-    lines.append("### Key Findings")
-    lines.append("")
-    lines.append("1. **Node Classification**: Our training-free LouvainNE pipeline closes 50-60% of the gap to supervised GNNs on standard benchmarks without using any labeled data during embedding construction.")
-    lines.append("2. **Link Prediction**: LouvainNE embeddings capture structural proximity effectively, achieving competitive AUC scores on link prediction tasks.")
-    lines.append("3. **Runtime**: Our method is 2-5x faster than baseline LouvainNE approaches and orders of magnitude faster than GNN training while maintaining competitive accuracy.")
-    lines.append("4. **Scalability**: On large-scale OGB datasets (ogbn-arxiv: 169K nodes, ogbn-products: 2.4M nodes), LouvainNE completes in minutes vs. hours for GNN training.")
-    lines.append("")
-    lines.append("### Advantages Over GNNs")
-    lines.append("")
-    lines.append("- **No labeled data required**: Embeddings are constructed in a training-free manner")
-    lines.append("- **Fast inference**: Once the graph is processed, embeddings are immediately available")
-    lines.append("- **Scalable**: O(n log n) complexity vs. O(n²) or worse for GNN message passing")
-    lines.append("- **Reproducible**: Deterministic with fixed seeds, no random initialization sensitivity")
-    lines.append("")
-    
+    lines.extend(build_best_summary_table(results))
+    lines.extend(build_node_table(results))
+    lines.extend(build_link_table(results))
+    lines.extend(build_runtime_notes(results))
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"Comprehensive report written to {output_path}")

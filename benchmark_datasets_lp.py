@@ -25,6 +25,8 @@ import torch
 from run_louvainne_experiments import (
     GraphData,
     LouvainNERunner,
+    build_link_prediction_embeddings,
+    prepare_train_link_prediction_edges,
     concat_features,
     create_link_prediction_split,
     compute_link_prediction_metrics,
@@ -46,7 +48,8 @@ RESIDUAL_DIM = 128
 BASELINE_TOP_K = 50
 BASELINE_ALPHA = 0.2
 IMPROVED_TOP_K = 15
-IMPROVED_MIN_SIMILARITY = 0.2
+IMPROVED_MIN_SIMILARITY = 0.1
+ENSEMBLE_SIZE = 5
 BLOCK_SIZE = 512
 LP_SPLIT_SEEDS = [42, 43, 44, 45, 46]
 LP_VAL_RATIO = 0.05
@@ -150,7 +153,8 @@ def summarize_runs(name: str, config: Dict[str, object], runs: List[Dict[str, fl
     ]:
         values = [run.get(key, 0.0) for run in runs]
         result[f"{key}_mean"] = float(sum(values) / len(values)) if values else 0.0
-        std = (sum((value - result[f"{key}_mean"]) ** 2 for value in values) / len(values)) ** 0.5 if values else 0.0
+        # Use Bessel's correction (ddof=1) for unbiased sample std estimate
+        std = (sum((value - result[f"{key}_mean"]) ** 2 for value in values) / max(len(values) - 1, 1)) ** 0.5 if values else 0.0
         result[f"{key}_std"] = float(std)
     return result
 
@@ -164,7 +168,8 @@ def attach_timing_summary(
     for key in ["embedding_time_seconds", "classifier_time_seconds", "per_seed_eval_time_seconds"]:
         values = [run.get(key, 0.0) for run in runs]
         result[f"{key}_mean"] = float(sum(values) / len(values)) if values else 0.0
-        std = (sum((value - result[f"{key}_mean"]) ** 2 for value in values) / len(values)) ** 0.5 if values else 0.0
+        # Use Bessel's correction (ddof=1) for unbiased sample std estimate
+        std = (sum((value - result[f"{key}_mean"]) ** 2 for value in values) / max(len(values) - 1, 1)) ** 0.5 if values else 0.0
         result[f"{key}_std"] = float(std)
     result["pipeline_time_seconds_mean"] = result["per_seed_eval_time_seconds_mean"]
     result["pipeline_time_seconds_std"] = result["per_seed_eval_time_seconds_std"]
@@ -181,8 +186,14 @@ def evaluate_units_with_link_pred(
     lp_split_seeds: Sequence[int] = LP_SPLIT_SEEDS,
     full_edge_index: torch.Tensor = None,
     structure_edges: Dict[Tuple[int, int], float] = None,
-    improved_predictions: Dict[Tuple[int, int], float] = None,
+    predicted_edges: Dict[Tuple[int, int], float] = None,
     feature_matrix: torch.Tensor = None,
+    lp_overlap_scale: float = 1.0,
+    lp_new_scale: float = 1.0,
+    lp_attention_gamma: float = 0.0,
+    lp_attention_temperature: float = 1.0,
+    lp_feature_dim: int = 0,
+    lp_embedding_dim: int = 256,
 ) -> Dict[str, object]:
     """Evaluate both node classification and link prediction.
     
@@ -203,69 +214,34 @@ def evaluate_units_with_link_pred(
         link_auc_values = []
         link_ap_values = []
         
-        if full_edge_index is not None and structure_edges is not None and improved_predictions is not None:
+        if full_edge_index is not None and structure_edges is not None:
             num_nodes = int(full_edge_index.max()) + 1
+            lp_runner = LouvainNERunner(REPO_ROOT, num_nodes, lp_embedding_dim)
             # Use fewer LP seeds for large graphs to avoid excessive runtime
             num_lp_seeds = 2 if num_nodes > 5000 else 3
             for lp_seed in lp_split_seeds[:num_lp_seeds]:
                 train_pos, val_pos, test_pos, train_edge_index, val_neg, test_neg = create_link_prediction_split(
                     full_edge_index, val_ratio=LP_VAL_RATIO, test_ratio=LP_TEST_RATIO, seed=lp_seed
                 )
-                
-                # Build canonical edge sets
-                train_edge_set = set()
-                for i in range(train_edge_index.shape[1]):
-                    u, v = int(train_edge_index[0, i].item()), int(train_edge_index[1, i].item())
-                    if u < v:
-                        train_edge_set.add((u, v))
-                    else:
-                        train_edge_set.add((v, u))
-                
-                # Build val/test edge sets to exclude from predicted edges
-                val_test_edges = set()
-                for i in range(val_pos.shape[1]):
-                    u, v = int(val_pos[0, i].item()), int(val_pos[1, i].item())
-                    val_test_edges.add((min(u, v), max(u, v)))
-                for i in range(test_pos.shape[1]):
-                    u, v = int(test_pos[0, i].item()), int(test_pos[1, i].item())
-                    val_test_edges.add((min(u, v), max(u, v)))
-                
-                # Keep train-only structural edges
-                train_structure = {k: v for k, v in structure_edges.items() if k in train_edge_set}
-                
-                # Keep predicted edges EXCEPT those in val/test sets
-                # This preserves the attribute-predicted edges while avoiding leakage
-                train_predicted = {k: v for k, v in improved_predictions.items() if k not in val_test_edges}
-                
-                # Fuse train-only edges
-                train_fused = dict(train_structure)
-                for edge, sim in train_predicted.items():
-                    if edge in train_fused:
-                        train_fused[edge] = 1.0 + 1.0 * sim
-                    else:
-                        train_fused[edge] = 0.75 * sim
-                
-                # Compute embeddings on train-only graph
-                runner = LouvainNERunner(REPO_ROOT, num_nodes, 256)
-                graph_embedding = normalize_rows(runner.embed(train_fused, seed + 10000))
-                
-                # Apply same improved pipeline as node classification:
-                # 1. Sparse attention refinement
-                graph_embedding = apply_sparse_attention(
-                    graph_embedding,
-                    train_predicted,  # Use train-only predicted edges for attention
-                    gamma=0.5,
-                    temperature=1.0,
+                _, train_predicted, train_fused = prepare_train_link_prediction_edges(
+                    train_edge_index=train_edge_index,
+                    val_pos=val_pos,
+                    test_pos=test_pos,
+                    structure_edges=structure_edges,
+                    predicted_edges=predicted_edges,
+                    overlap_scale=lp_overlap_scale,
+                    new_scale=lp_new_scale,
                 )
-                
-                # 2. Attribute residual concatenation
-                if feature_matrix is not None:
-                    projection_dim = min(RESIDUAL_DIM, feature_matrix.shape[0] - 1, feature_matrix.shape[1])
-                    feature_embedding = normalize_rows(low_rank_projection(feature_matrix, projection_dim))
-                    train_embeddings = concat_features([graph_embedding, feature_embedding])
-                else:
-                    train_embeddings = graph_embedding
-                
+                train_embeddings = build_link_prediction_embeddings(
+                    runner=lp_runner,
+                    fused_edges=train_fused,
+                    predicted_edges=train_predicted,
+                    seed=seed + 10000,
+                    feature_matrix=feature_matrix,
+                    feature_dim=lp_feature_dim,
+                    attention_gamma=lp_attention_gamma,
+                    attention_temperature=lp_attention_temperature,
+                )
                 # Evaluate link prediction
                 lp_metrics = compute_link_prediction_metrics(train_embeddings, test_pos, test_neg)
                 link_auc_values.append(lp_metrics["link_auc"])
@@ -433,12 +409,27 @@ def benchmark_dataset_with_link_pred(dataset_name: str, embedding_dim: int) -> D
         setup_time_seconds=baseline_setup_time_seconds,
         full_edge_index=data.edge_index,
         structure_edges=structure_edges,
-        improved_predictions=baseline_predictions,
-        feature_matrix=data.x,
+        predicted_edges=baseline_predictions,
+        feature_matrix=None,
+        lp_overlap_scale=1.0,
+        lp_new_scale=1.0,
+        lp_attention_gamma=0.0,
+        lp_attention_temperature=1.0,
+        lp_feature_dim=0,
+        lp_embedding_dim=embedding_dim,
     )
 
     def improved_embedding(seed: int) -> torch.Tensor:
-        graph_embedding = normalize_rows(runner.embed(improved_edges, seed))
+        # Use ensembling for the graph embedding
+        from run_louvainne_experiments import aligned_ensemble
+
+        # We need the runner and the edges to perform ensembling
+        # Instead of a simple lambda, we'll use a helper that handles the ensemble
+        # Since this function is inside benchmark_dataset_with_link_pred, it has access to runner and improved_edges
+        seeds = list(range(ENSEMBLE_SIZE))
+        graph_embedding = aligned_ensemble(runner, improved_edges, seeds)
+        graph_embedding = normalize_rows(graph_embedding)
+
         graph_embedding = apply_sparse_attention(
             graph_embedding,
             improved_predictions,
@@ -468,8 +459,14 @@ def benchmark_dataset_with_link_pred(dataset_name: str, embedding_dim: int) -> D
         setup_time_seconds=improved_setup_time_seconds,
         full_edge_index=data.edge_index,
         structure_edges=structure_edges,
-        improved_predictions=improved_predictions,
+        predicted_edges=improved_predictions,
         feature_matrix=data.x,
+        lp_overlap_scale=1.0,
+        lp_new_scale=0.75,
+        lp_attention_gamma=0.5,
+        lp_attention_temperature=1.0,
+        lp_feature_dim=projection_dim,
+        lp_embedding_dim=embedding_dim,
     )
 
     paths = build_paths(bundle.name)

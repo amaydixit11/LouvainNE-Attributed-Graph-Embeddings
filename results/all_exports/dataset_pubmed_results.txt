@@ -1,0 +1,62 @@
+Export of dataset_pubmed_results
+================================
+--- Entry ---
+dataset: PubMed
+type: baseline
+name: projected_threshold_method2_baseline
+config: {'dataset': 'PubMed', 'graph_projection_dim': 64, 'baseline_top_k': 50, 'baseline_alpha': 0.2, 'evaluation_axis': 'classifier_seed'}
+runs: [{'penalty': 0.01, 'val_micro_f1': 0.5920000076293945, 'val_macro_f1': 0.6017135801255294, 'test_micro_f1': 0.6169999837875366, 'test_macro_f1': 0.6185907222420409, 'selection_score': 0.596856793877462, 'link_auc': 0.7138082087039948, 'link_ap': 0.8560085594654083, 'unit': 'seed_1548', 'seed': 1548.0, 'embedding_time_seconds': 5.993571432991303, 'classifier_time_seconds': 21.959752940005274, 'per_seed_eval_time_seconds': 27.953324372996576, 'pipeline_time_seconds': 27.953324372996576}, {'penalty': 0.001, 'val_micro_f1': 0.5920000076293945, 'val_macro_f1': 0.599851136989475, 'test_micro_f1': 0.5830000042915344, 'test_macro_f1': 0.5820969283671142, 'selection_score': 0.5959255723094348, 'link_auc': 0.7042906284332275, 'link_ap': 0.8501951992511749, 'unit': 'seed_1549', 'seed': 1549.0, 'embedding_time_seconds': 5.786405856008059, 'classifier_time_seconds': 18.711680263993912, 'per_seed_eval_time_seconds': 24.49808612000197, 'pipeline_time_seconds': 24.49808612000197}, {'penalty': 0.0, 'val_micro_f1': 0.5400000214576721, 'val_macro_f1': 0.5467847046570451, 'test_micro_f1': 0.527999997138977, 'test_macro_f1': 0.5303290163721792, 'selection_score': 0.5433923630573586, 'link_auc': 0.7088812291622162, 'link_ap': 0.8542016446590424, 'unit': 'seed_1550', 'seed': 1550.0, 'embedding_time_seconds': 5.895920495007886, 'classifier_time_seconds': 16.55766326400044, 'per_seed_eval_time_seconds': 22.453583759008325, 'pipeline_time_seconds': 22.453583759008325}, {'penalty': 0.001, 'val_micro_f1': 0.5740000009536743, 'val_macro_f1': 0.5848968165856804, 'test_micro_f1': 0.5950000286102295, 'test_macro_f1': 0.5984862810753088, 'selection_score': 0.5794484087696774, 'link_auc': 0.6967232525348663, 'link_ap': 0.8495477437973022, 'unit': 'seed_1551', 'seed': 1551.0, 'embedding_time_seconds': 4.992552376003005, 'classifier_time_seconds': 19.896764988996438, 'per_seed_eval_time_seconds': 24.889317364999442, 'pipeline_time_seconds': 24.889317364999442}, {'penalty': 0.001, 'val_micro_f1': 0.5519999861717224, 'val_macro_f1': 0.56632306484427, 'test_micro_f1': 0.5770000219345093, 'test_macro_f1': 0.5848388651532956, 'selection_score': 0.5591615255079962, 'link_auc': 0.7108310759067535, 'link_ap': 0.853722870349884, 'unit': 'seed_1552', 'seed': 1552.0, 'embedding_time_seconds': 5.074690333000035, 'classifier_time_seconds': 17.89495913599967, 'per_seed_eval_time_seconds': 22.969649468999705, 'pipeline_time_seconds': 22.969649468999705}]
+val_micro_f1_mean: 0.5700000047683715
+val_micro_f1_std: 0.0210142803320715
+val_macro_f1_mean: 0.5799138606404
+val_macro_f1_std: 0.02087967104311698
+test_micro_f1_mean: 0.5800000071525574
+test_micro_f1_std: 0.02938026497591356
+test_macro_f1_mean: 0.5828683626419877
+test_macro_f1_std: 0.02927410886442743
+selection_score_mean: 0.5749569327043857
+selection_score_std: 0.020905875102627553
+link_auc_mean: 0.7069068789482117
+link_auc_std: 0.005957797355042641
+link_ap_mean: 0.8527352035045623
+link_ap_std: 0.002467886370801504
+embedding_time_seconds_mean: 5.548628098602057
+embedding_time_seconds_std: 0.4263712129737762
+pipeline_time_seconds_mean: 24.552792217201205
+pipeline_time_seconds_std: 1.928360857666492
+setup_time_seconds: 4.687521948988433
+classifier_time_seconds_mean: 19.004164118599146
+classifier_time_seconds_std: 1.8348564262761982
+per_seed_eval_time_seconds_mean: 24.552792217201205
+per_seed_eval_time_seconds_std: 1.928360857666492
+
+--- Entry ---
+dataset: PubMed
+type: improved
+name: projected_mutual_topk_improved
+config: {'dataset': 'PubMed', 'graph_projection_dim': 64, 'graph_top_k': 15, 'graph_mutual': True, 'graph_min_similarity': 0.1, 'graph_overlap_scale': 1.0, 'graph_new_scale': 0.75, 'attention_gamma': 0.5, 'attention_temperature': 1.0, 'feature_dim': 128, 'evaluation_axis': 'classifier_seed'}
+runs: [{'penalty': 0.01, 'val_micro_f1': 0.7319999933242798, 'val_macro_f1': 0.735365405427063, 'test_micro_f1': 0.7379999756813049, 'test_macro_f1': 0.731867832969424, 'selection_score': 0.7336826993756713, 'link_auc': 0.9104180335998535, 'link_ap': 0.9518652558326721, 'unit': 'seed_1548', 'seed': 1548.0, 'embedding_time_seconds': 16.87511929500033, 'classifier_time_seconds': 25.340714207995916, 'per_seed_eval_time_seconds': 42.21583350299625, 'pipeline_time_seconds': 42.21583350299625}, {'penalty': 0.01, 'val_micro_f1': 0.7319999933242798, 'val_macro_f1': 0.735365405427063, 'test_micro_f1': 0.7379999756813049, 'test_macro_f1': 0.731867832969424, 'selection_score': 0.7336826993756713, 'link_auc': 0.910864382982254, 'link_ap': 0.9518809616565704, 'unit': 'seed_1549', 'seed': 1549.0, 'embedding_time_seconds': 21.79963179200422, 'classifier_time_seconds': 20.712509446995682, 'per_seed_eval_time_seconds': 42.5121412389999, 'pipeline_time_seconds': 42.5121412389999}, {'penalty': 0.01, 'val_micro_f1': 0.7319999933242798, 'val_macro_f1': 0.735365405427063, 'test_micro_f1': 0.7379999756813049, 'test_macro_f1': 0.731867832969424, 'selection_score': 0.7336826993756713, 'link_auc': 0.9111985862255096, 'link_ap': 0.9520765542984009, 'unit': 'seed_1550', 'seed': 1550.0, 'embedding_time_seconds': 19.730422519991407, 'classifier_time_seconds': 22.542873195008724, 'per_seed_eval_time_seconds': 42.27329571500013, 'pipeline_time_seconds': 42.27329571500013}, {'penalty': 0.01, 'val_micro_f1': 0.7319999933242798, 'val_macro_f1': 0.735365405427063, 'test_micro_f1': 0.7379999756813049, 'test_macro_f1': 0.731867832969424, 'selection_score': 0.7336826993756713, 'link_auc': 0.9126245379447937, 'link_ap': 0.9524436593055725, 'unit': 'seed_1551', 'seed': 1551.0, 'embedding_time_seconds': 18.844349582999712, 'classifier_time_seconds': 23.68485149499611, 'per_seed_eval_time_seconds': 42.52920107799582, 'pipeline_time_seconds': 42.52920107799582}, {'penalty': 0.01, 'val_micro_f1': 0.7319999933242798, 'val_macro_f1': 0.735365405427063, 'test_micro_f1': 0.7379999756813049, 'test_macro_f1': 0.731867832969424, 'selection_score': 0.7336826993756713, 'link_auc': 0.9116787016391754, 'link_ap': 0.9521928429603577, 'unit': 'seed_1552', 'seed': 1552.0, 'embedding_time_seconds': 16.402732055998058, 'classifier_time_seconds': 15.966770209997776, 'per_seed_eval_time_seconds': 32.369502265995834, 'pipeline_time_seconds': 32.369502265995834}]
+val_micro_f1_mean: 0.7319999933242798
+val_micro_f1_std: 0.0
+val_macro_f1_mean: 0.735365405427063
+val_macro_f1_std: 0.0
+test_micro_f1_mean: 0.7379999756813049
+test_micro_f1_std: 0.0
+test_macro_f1_mean: 0.731867832969424
+test_macro_f1_std: 0.0
+selection_score_mean: 0.7336826993756713
+selection_score_std: 0.0
+link_auc_mean: 0.9113568484783172
+link_auc_std: 0.0007562497764721853
+link_ap_mean: 0.9520918548107147
+link_ap_std: 0.00021448642566017698
+embedding_time_seconds_mean: 18.730451049198745
+embedding_time_seconds_std: 1.9643481300346637
+pipeline_time_seconds_mean: 40.37999476019759
+pipeline_time_seconds_std: 4.007194000749461
+setup_time_seconds: 2.611625514997286
+classifier_time_seconds_mean: 21.64954371099884
+classifier_time_seconds_std: 3.216743783893853
+per_seed_eval_time_seconds_mean: 40.37999476019759
+per_seed_eval_time_seconds_std: 4.007194000749461
+

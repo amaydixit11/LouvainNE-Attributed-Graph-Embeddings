@@ -12,12 +12,12 @@ on very large graphs where GNNs become **infeasible** due to time and memory con
 
 1. **Small graphs** (Cora, CiteSeer, PubMed):
    - GNNs win on accuracy (as expected)
-   - LouvainNE is 1-3x faster
+   - LouvainNE is 1-3x faster (total pipeline time vs GNN per-epoch × 200-1000 epochs)
    - Both methods complete easily
 
 2. **Medium graphs** (ogbn-arxiv: 169K nodes):
    - GNNs still win accuracy
-   - LouvainNE is 10-50x faster
+   - LouvainNE is 10-50x faster (comparing total LouvainNE time vs GNN total training time)
    - GNNs require careful tuning and GPU
 
 3. **Large graphs** (ogbn-products: 2.4M nodes):
@@ -29,6 +29,22 @@ on very large graphs where GNNs become **infeasible** due to time and memory con
    - GNNs become impractical without serious engineering
    - LouvainNE may still run (or can be adapted)
    - This is the regime where training-free methods shine
+
+### Empirical Complexity
+
+The theoretical complexity claim is O(n log n), but measured runtimes scale approximately as
+**O(n^1.5)** based on empirical measurements:
+- 10K nodes → ~10s
+- 50K nodes → ~96s (9.6x increase for 5x nodes; O(n log n) predicts ~6x)
+- 100K nodes → ~334s (3.5x increase for 2x nodes; O(n log n) predicts ~2.1x)
+
+This is still good scalability — just not as strong as the O(n log n) claim suggests.
+The scaling remains practical for graphs up to millions of nodes.
+
+**Important runtime comparison note:** When comparing LouvainNE time against GNN time,
+GNN per-epoch times from literature must be multiplied by typical epoch counts (200-1000)
+to get total training time. A "3-7x speedup" over per-epoch time actually translates to
+a much larger advantage over total GNN training time.
 
 ## What's Implemented
 
@@ -116,11 +132,15 @@ Based on the scaling story:
 - "LouvainNE targets the high-scale regime where training-free embedding is operationally preferable"
 - "Our method preserves reasonable quality while dramatically improving scalability"
 - "We identify the graph scale at which the practical tradeoff shifts"
-- "On graphs with 100K+ nodes, LouvainNE is 10-36x faster than GNNs"
+- "On graphs with 100K+ nodes, LouvainNE completes in minutes while GNNs require hours/days"
+- "Empirical scaling is ~O(n^1.5), which is practical for graphs up to millions of nodes"
+- "Our total pipeline time is comparable to a single GNN epoch, and GNNs need 200-1000 epochs"
 
 ### Don't Say:
-- "We beat GNNs overall"
+- "We beat GNNs overall" (we beat them on speed, not accuracy)
 - "Our accuracy is better than GNNs"
+- "We have O(n log n) complexity" (measured data shows ~O(n^1.5))
+- "3-7x speedup" without clarifying this is vs per-epoch time, not total training time
 
 ### Three Key Tables/Figures:
 

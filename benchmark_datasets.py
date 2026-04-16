@@ -139,7 +139,8 @@ def summarize_runs(name: str, config: Dict[str, object], runs: List[Dict[str, fl
     ]:
         values = [run[key] for run in runs]
         result[f"{key}_mean"] = float(sum(values) / len(values))
-        std = (sum((value - result[f"{key}_mean"]) ** 2 for value in values) / len(values)) ** 0.5
+        # Use Bessel's correction (ddof=1) for unbiased sample std estimate
+        std = (sum((value - result[f"{key}_mean"]) ** 2 for value in values) / max(len(values) - 1, 1)) ** 0.5
         result[f"{key}_std"] = float(std)
     return result
 
@@ -153,7 +154,8 @@ def attach_timing_summary(
     for key in ["embedding_time_seconds", "classifier_time_seconds", "per_seed_eval_time_seconds"]:
         values = [run[key] for run in runs]
         result[f"{key}_mean"] = float(sum(values) / len(values))
-        std = (sum((value - result[f"{key}_mean"]) ** 2 for value in values) / len(values)) ** 0.5
+        # Use Bessel's correction (ddof=1) for unbiased sample std estimate
+        std = (sum((value - result[f"{key}_mean"]) ** 2 for value in values) / max(len(values) - 1, 1)) ** 0.5
         result[f"{key}_std"] = float(std)
     result["pipeline_time_seconds_mean"] = result["per_seed_eval_time_seconds_mean"]
     result["pipeline_time_seconds_std"] = result["per_seed_eval_time_seconds_std"]

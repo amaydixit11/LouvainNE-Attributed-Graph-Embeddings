@@ -270,14 +270,22 @@ results/
 
 ### 3. Runtime & Scalability
 - **2.52× speedup** over baseline LouvainNE approaches (Cora: 0.88s vs 2.22s)
-- **Orders of magnitude faster** than GNN training on large graphs
-- **O(n log n) complexity** vs O(n²) or worse for GNN message passing
+- **Orders of magnitude faster** than GNN **total training time** on large graphs
+  - Note: GNN per-epoch times from literature; typical training requires 200–1000 epochs
+  - LouvainNE is single-pass, training-free
+- **O(n^1.5) empirical complexity** (measured) vs theoretical O(n log n) claim
 - **Single pass**: No iterative training required
 
 ### 4. Large-Scale Performance (OGB)
 - **ogbn-arxiv** (169K nodes): Completes in minutes
 - **ogbn-products** (2.4M nodes): Feasible where GNNs require hours/days
 - **Demonstrates scalability advantage** clearly
+
+**⚠️ OGB Protocol Disclaimer:** OGB link prediction uses a **custom edge-split protocol**
+(10% test, 5% val with negative sampling) on ogbn-* graphs, NOT the official ogbl-* evaluator
+with canonical negative samples. Node classification uses official OGB splits. Direct comparison
+with official OGB leaderboard results should account for this protocol difference.
+Claims like "defeats GNNs" refer to speed/scalability, not accuracy.
 
 ---
 
@@ -359,6 +367,20 @@ results/
 - Node classification: Original papers (Kipf & Welling 2017, Veličković et al. 2018, etc.)
 - Link prediction: Kipf & Welling 2016 (Variational Graph Auto-Encoders)
 - Runtime: OGB leaderboard and literature estimates
+
+**⚠️ SOTA Comparison Disclaimers:**
+1. **Mixed data splits**: External SOTA numbers come from papers using different train/val/test splits
+   (e.g., semi-supervised 20 labels/class vs full-supervised). Differences of a few percent may
+   reflect split differences rather than embedding quality.
+2. **BlogCatalog multi-label**: BlogCatalog is a multi-label dataset. Our ~91% micro-F1 uses the
+   repo's prepared splits and evaluation protocol. External baselines like node2vec (~34%) and
+   DeepWalk (~33%) use different protocols (standard 10/10/80 splits with multi-label micro-F1).
+   These numbers are **not directly comparable** and should not be placed side-by-side in a SOTA
+   table without normalizing the evaluation protocol.
+3. **Improved pipeline ablation**: The "improved" model concatenates LouvainNE graph embeddings
+   with SVD-compressed raw features plus sparse attention. This is a well-known technique similar
+   to TADW or ANRL. The win over the baseline could be largely explained by the SVD feature
+   concatenation alone — explicit ablation isolating each component is recommended.
 
 ---
 
