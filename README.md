@@ -8,16 +8,16 @@ It is based on LouvainNE:
 
 ## What is maintained in this repo
 
-- `prepare_datasets.py`
+- `src/prepare_datasets.py`
   The supported dataset bootstrap script. It creates `data/` and fetches only `Cora`, `CiteSeer`, `PubMed`, and `BlogCatalog`.
 
-- `run_louvainne_experiments.py`
-  Main Cora experiment runner. This reproduces the tuned baseline vs improved pipeline on the original Cora setup, using data prepared by `prepare_datasets.py`.
+- `src/run_louvainne_experiments.py`
+  Main Cora experiment runner. This reproduces the tuned baseline vs improved pipeline on the original Cora setup, using data prepared by `src/prepare_datasets.py`.
 
-- `benchmark_datasets.py`
+- `src/benchmark_datasets.py`
   Multi-dataset benchmark runner for `Cora`, `CiteSeer`, `PubMed`, and `BlogCatalog`. It writes one subfolder per dataset under `results/`.
 
-- `summay.md`
+- `docs/reports/summay.md`
   Analysis of what was implemented in the original repo, what was changed, and the measured results.
 
 - `results/louvainne_results.json`
@@ -63,7 +63,7 @@ Both runners rebuild the needed LouvainNE binaries automatically under `build/lo
 Run this first:
 
 ```bash
-python prepare_datasets.py
+python src/prepare_datasets.py
 ```
 
 This creates `data/` and prepares exactly these datasets:
@@ -78,7 +78,7 @@ This creates `data/` and prepares exactly these datasets:
 Run all benchmarks end-to-end:
 
 ```bash
-python run_all_experiments.py
+python src/run_all_experiments.py
 ```
 
 This executes:
@@ -91,14 +91,14 @@ Options:
 
 ```bash
 # Skip specific stages
-python run_all_experiments.py --skip-ogb  # Skip OGB if ogb not installed
-python run_all_experiments.py --skip-report  # Skip report generation
+python src/run_all_experiments.py --skip-ogb  # Skip OGB if ogb not installed
+python src/run_all_experiments.py --skip-report  # Skip report generation
 
 # Custom datasets
-python run_all_experiments.py --datasets Cora CiteSeer --ogb-datasets ogbn-arxiv
+python src/run_all_experiments.py --datasets Cora CiteSeer --ogb-datasets ogbn-arxiv
 
 # Check dependencies only
-python run_all_experiments.py --check-only
+python src/run_all_experiments.py --check-only
 ```
 
 ### Individual benchmark scripts
@@ -108,13 +108,13 @@ python run_all_experiments.py --check-only
 Quick smoke test:
 
 ```bash
-python run_louvainne_experiments.py --tune-runs 1 --eval-runs 1 --output-json /tmp/louvainne_smoke.json
+python src/run_louvainne_experiments.py --tune-runs 1 --eval-runs 1 --output-json /tmp/louvainne_smoke.json
 ```
 
 Full reproducible run:
 
 ```bash
-python run_louvainne_experiments.py \
+python src/run_louvainne_experiments.py \
   --tune-runs 2 \
   --eval-runs 5 \
   --output-json results/louvainne_results.json \
@@ -126,13 +126,13 @@ python run_louvainne_experiments.py \
 Run all maintained datasets with **both node classification and link prediction**:
 
 ```bash
-python benchmark_datasets_lp.py --datasets Cora CiteSeer PubMed BlogCatalog
+python src/benchmark_datasets_lp.py --datasets Cora CiteSeer PubMed BlogCatalog
 ```
 
 Run only one dataset:
 
 ```bash
-python benchmark_datasets_lp.py --datasets CiteSeer
+python src/benchmark_datasets_lp.py --datasets CiteSeer
 ```
 
 This writes:
@@ -151,8 +151,8 @@ Run on Open Graph Benchmark datasets (requires `ogb` package):
 
 ```bash
 pip install ogb
-python benchmark_ogb.py --datasets ogbn-arxiv
-python benchmark_ogb.py --datasets ogbn-arxiv ogbn-products --embedding-dim 256
+python src/benchmark_ogb.py --datasets ogbn-arxiv
+python src/benchmark_ogb.py --datasets ogbn-arxiv ogbn-products --embedding-dim 256
 ```
 
 This writes:
@@ -167,7 +167,7 @@ This writes:
 Generate comprehensive markdown report comparing LouvainNE with published GNN results:
 
 ```bash
-python generate_sota_report.py
+python src/generate_sota_report.py
 ```
 
 This writes:
@@ -181,13 +181,13 @@ This writes:
 1. Prepare the datasets:
 
 ```bash
-python prepare_datasets.py
+python src/prepare_datasets.py
 ```
 
 2. Run the Cora smoke test:
 
 ```bash
-python run_louvainne_experiments.py --tune-runs 1 --eval-runs 1 --output-json /tmp/louvainne_smoke.json --plot-path /tmp/louvainne_smoke.png
+python src/run_louvainne_experiments.py --tune-runs 1 --eval-runs 1 --output-json /tmp/louvainne_smoke.json --plot-path /tmp/louvainne_smoke.png
 ```
 
 ### Full benchmark suite
@@ -195,7 +195,7 @@ python run_louvainne_experiments.py --tune-runs 1 --eval-runs 1 --output-json /t
 3. Run the multi-dataset benchmark with link prediction:
 
 ```bash
-python benchmark_datasets_lp.py --datasets Cora CiteSeer PubMed BlogCatalog
+python src/benchmark_datasets_lp.py --datasets Cora CiteSeer PubMed BlogCatalog
 ```
 
 4. Run OGB benchmarks (optional, requires `ogb`):
@@ -208,7 +208,7 @@ python benchmark_ogb.py --datasets ogbn-arxiv
 5. Generate comprehensive report:
 
 ```bash
-python generate_sota_report.py
+python src/generate_sota_report.py
 ```
 
 6. Verify the key outputs exist:
