@@ -1,0 +1,39 @@
+{
+    "config": {
+        "seed": 42,
+        "dataset": "Cora",
+        "baseline": "majority",
+        "tau": 0.75,
+        "k": 1,
+        "gnn_type": "GCN",
+        "epochs": 200,
+        "hidden": 16,
+        "lr": 0.01,
+        "fusion": "hard",
+        "output": "results/test_majority.json"
+    },
+    "phases": {
+        "num_communities": 102,
+        "num_hard_nodes": 301,
+        "subgraph_nodes": 929,
+        "train_nodes_in_subgraph": 48
+    },
+    "metrics": {
+        "baseline": {
+            "accuracy": 0.706,
+            "f1_macro": 0.6857999316971375,
+            "f1_micro": 0.706
+        },
+        "hybrid": {
+            "accuracy": 0.724,
+            "f1_macro": 0.7075086309738369,
+            "f1_micro": 0.724
+        },
+        "improvement": 0.018000000000000016
+    },
+    "runtimes": {
+        "baseline": 0.37805843353271484,
+        "gnn": 3.544100522994995,
+        "total": 3.92215895652771
+    }
+}
