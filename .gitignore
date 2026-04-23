@@ -4,3 +4,5 @@ build/
 .mplconfig/
 data/
 .qwen
+digest.txt
+whatsapp.txt
