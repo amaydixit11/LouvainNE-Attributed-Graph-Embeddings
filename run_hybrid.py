@@ -36,6 +36,8 @@ def main():
     parser.add_argument("--k", type=int, default=1, help="Fixed k-hop if not adaptive")
     parser.add_argument("--gnn_type", type=str, default="GCN")
     parser.add_argument("--targeted", action="store_true", help="Supervise GNN ONLY on hard nodes")
+    parser.add_argument("--filter", action="store_true", help="Filter noisy edges in subgraph")
+    parser.add_argument("--learned_conf", action="store_true", help="Use ML model for confidence")
     parser.add_argument("--fusion", type=str, default="hard", choices=["hard", "soft"])
     parser.add_argument("--output", type=str, default="results/hybrid_result.json")
     
@@ -52,8 +54,13 @@ def main():
     else:
         louvain_preds = community_feature_classifier(partition, data.x, data.y, data.train_mask)
     
-    # IMPROVED CONFIDENCE (Community + Neighbors)
-    confidences = compute_confidence(G, partition, louvain_preds)
+    # CONFIDENCE LOGIC
+    if args.learned_conf:
+        from hybrid_src.baseline import learned_confidence
+        print("Training learned confidence predictor...")
+        confidences = learned_confidence(G, partition, louvain_preds, data.y.cpu().numpy(), data.train_mask.cpu().numpy())
+    else:
+        confidences = compute_confidence(G, partition, louvain_preds)
     
     baseline_test_metrics = evaluate(data.y, louvain_preds, data.test_mask)
     print(f"Baseline Accuracy (Test): {baseline_test_metrics['accuracy']:.4f}")
@@ -75,28 +82,57 @@ def main():
         for node in hard_nodes:
             subgraph_nodes.update(nx.single_source_shortest_path_length(G, node, cutoff=args.k).keys())
             
-    sub_data, sub_node_mask, node_list = prepare_pyg_subgraph(data, subgraph_nodes)
-    print(f"Subgraph size: {sub_data.num_nodes} nodes")
+    import time
     
-    # ADVANCED FIX: Inject Community IDs into Data
+    print(f"--- Phase 4: Full-Graph GNN Baseline ---")
     num_communities = len(set(partition.values()))
-    # Map original partition to subgraph indices
-    sub_comm_ids = torch.tensor([partition[orig_idx] for orig_idx in node_list], dtype=torch.long)
-    sub_data.comm_ids = sub_comm_ids
+    global_model = get_model(args.gnn_type, data.num_features, 16, num_classes, 
+                           num_communities=num_communities)
+    # Pass full data comm_ids
+    all_comm_ids = torch.tensor([partition[i] for i in range(data.num_nodes)], dtype=torch.long)
+    data.comm_ids = all_comm_ids
     
-    print(f"--- Phase 4: Targeted GNN Training (w/ Community Features) ---")
-    model = get_model(args.gnn_type, data.num_features, 16, num_classes, num_communities=num_communities)
+    t_start_global = time.time()
+    global_model = train_gnn(global_model, data, epochs=200)
+    t_total_global = time.time() - t_start_global
+    
+    global_probs = get_gnn_predictions(global_model, data)
+    global_preds = global_probs.argmax(dim=-1).cpu().numpy()
+    global_test_metrics = evaluate(data.y, global_preds, data.test_mask)
+    print(f"Global GNN Accuracy (Test): {global_test_metrics['accuracy']:.4f} | Time: {t_total_global:.2f}s")
+
+    print(f"--- Phase 5: Targeted Hybrid GNN Training ---")
+    sub_data, sub_node_mask, node_list = prepare_pyg_subgraph(data, subgraph_nodes)
+    
+    if args.filter:
+        from hybrid_src.subgraph import filter_subgraph_edges
+        print("Filtering subgraph noise...")
+        sub_data = filter_subgraph_edges(sub_data, partition)
+        
+    print(f"Subgraph size: {sub_data.num_nodes} nodes, {sub_data.edge_index.size(1)} edges")
+    sub_data.comm_ids = all_comm_ids[node_list]
+    
+    sub_confidences = torch.tensor(confidences[node_list], dtype=torch.float)
+    node_weights = (1.0 - sub_confidences) + 0.1 
+    
+    hybrid_gnn_model = get_model(args.gnn_type, data.num_features, 16, num_classes, 
+                               num_communities=num_communities)
     
     supervision_mask = None
     if args.targeted:
         print("Targeting supervision to hard nodes only...")
-        # Map original hard_node_mask to subgraph indices
         supervision_mask = torch.tensor(hard_node_mask[node_list])
         
-    model = train_gnn(model, sub_data, supervision_mask=supervision_mask)
-    gnn_probs = get_gnn_predictions(model, sub_data)
+    t_start_hybrid = time.time()
+    hybrid_gnn_model = train_gnn(hybrid_gnn_model, sub_data, 
+                               supervision_mask=supervision_mask, 
+                               node_weights=node_weights)
+    t_total_hybrid = time.time() - t_start_hybrid
     
-    print(f"--- Phase 5: Predicted Fusion ---")
+    gnn_probs = get_gnn_predictions(hybrid_gnn_model, sub_data)
+    print(f"Hybrid GNN Training | Time: {t_total_hybrid:.2f}s")
+    
+    print(f"--- Phase 6: Predicted Fusion ---")
     if args.fusion == "hard":
         gnn_label_preds = gnn_probs.argmax(dim=-1).cpu().numpy()
         final_preds = merge_predictions(louvain_preds, gnn_label_preds, hard_nodes, node_list)
@@ -106,10 +142,15 @@ def main():
         final_preds = soft_fusion(louvain_preds, gnn_probs, confidences, node_list, num_classes, data.num_nodes, 
                                  baseline_probs=baseline_probs)
     
-    print(f"--- Phase 6: Diagnostic Evaluation ---")
+    print(f"--- Phase 7: Diagnostic Evaluation ---")
     total_test_nodes = data.test_mask.sum().item()
     test_hard_mask = (data.test_mask.cpu().numpy() & hard_node_mask)
     test_easy_mask = (data.test_mask.cpu().numpy() & ~hard_node_mask)
+    
+    # ADVANCED FIX: Calibration Analysis
+    from hybrid_src.eval import calibration_analysis
+    cal_res = calibration_analysis(louvain_preds, data.y.cpu().numpy(), confidences, mask=data.test_mask.cpu().numpy())
+    print(f"Confidence/Error Correlation: {cal_res['correlation']:.4f}")
     
     hybrid_test_metrics = evaluate(data.y, final_preds, data.test_mask)
     
@@ -122,6 +163,7 @@ def main():
     base_res_hard = evaluate(data.y, louvain_preds, test_hard_mask)
     
     print(f"Hybrid Accuracy (Total Test): {hybrid_test_metrics['accuracy']:.4f}")
+    print(f"Global GNN Accuracy: {global_test_metrics['accuracy']:.4f}")
     if test_easy_mask.any():
         print(f"Easy nodes (Baseline: {base_res_easy['accuracy']:.4f} -> Hybrid: {res_easy['accuracy']:.4f})")
     if test_hard_mask.any():
@@ -130,17 +172,28 @@ def main():
     results = {
         "metrics": {
             "baseline": baseline_test_metrics,
+            "global_gnn": global_test_metrics,
             "hybrid": hybrid_test_metrics,
             "easy_split": {"baseline": base_res_easy, "hybrid": res_easy},
-            "hard_split": {"baseline": base_res_hard, "hybrid": res_hard}
+            "hard_split": {"baseline": base_res_hard, "hybrid": res_hard},
+            "calibration": cal_res
         },
         "stats": {
             "num_hard": len(hard_nodes),
             "subgraph_size": sub_data.num_nodes,
+            "subgraph_edges": sub_data.edge_index.size(1),
             "targeted": args.targeted,
-            "adaptive": args.adaptive
+            "adaptive": args.adaptive,
+            "filtered": args.filter,
+            "t_global_train": t_total_global,
+            "t_hybrid_train": t_total_hybrid
         }
     }
+    
+    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    with open(args.output, "w") as f:
+        json.dump(results, f, indent=4)
+    print(f"Results saved to {args.output}")
     
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
     with open(args.output, "w") as f:
