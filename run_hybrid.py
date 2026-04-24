@@ -134,8 +134,12 @@ def main():
     
     print(f"--- Phase 6: Predicted Fusion ---")
     if args.fusion == "hard":
+        from hybrid_src.fusion import merge_predictions, boundary_smoothing
         gnn_label_preds = gnn_probs.argmax(dim=-1).cpu().numpy()
         final_preds = merge_predictions(louvain_preds, gnn_label_preds, hard_nodes, node_list)
+        
+        print("Applying Confidence-Boundary Smoothing...")
+        final_preds = boundary_smoothing(G, final_preds, confidences, iterations=1)
     else:
         from hybrid_src.baseline import get_community_label_distribution
         baseline_probs = get_community_label_distribution(partition, data.y, data.train_mask, num_classes)
