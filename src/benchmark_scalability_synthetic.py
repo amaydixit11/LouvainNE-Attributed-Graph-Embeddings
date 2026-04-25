@@ -315,7 +315,7 @@ def main():
         
         result = benchmark_louvainne_synthetic(name, size, avg_degree)
         results.append(result)
-        
+
         if result.completed:
             print(f"✅ Completed in {result.total_time_s:.2f}s")
             print(f"   Nodes: {result.nodes:,}, Edges: {result.edges:,}")
@@ -324,6 +324,29 @@ def main():
             print(f"   Setup: {result.setup_time_s:.2f}s, Embed: {result.embedding_time_s:.2f}s")
         else:
             print(f"❌ Failed: {result.error_message}")
+
+        # Save incrementally after each run
+        results_list = []
+        for r in results:
+            results_list.append({
+                "dataset": r.dataset,
+                "nodes": r.nodes,
+                "edges": r.edges,
+                "features": r.features,
+                "classes": r.classes,
+                "avg_degree": r.avg_degree,
+                "setup_time_s": round(r.setup_time_s, 2),
+                "embedding_time_s": round(r.embedding_time_s, 2),
+                "total_time_s": round(r.total_time_s, 2),
+                "peak_memory_mb": round(r.peak_memory_mb, 1),
+                "node_micro_f1": round(r.node_micro_f1, 4),
+                "completed": r.completed,
+                "error_message": r.error_message,
+            })
+
+        output_json = output_dir / "synthetic_scalability.json"
+        output_json.write_text(json.dumps(results_list, indent=2))
+        print(f"Incremental results saved to {output_json}")
     
     # Save results
     results_list = []
