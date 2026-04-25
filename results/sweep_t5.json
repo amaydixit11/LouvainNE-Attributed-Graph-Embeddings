@@ -1,0 +1,51 @@
+{
+    "metrics": {
+        "baseline": {
+            "accuracy": 0.706,
+            "f1_macro": 0.6857999316971375,
+            "f1_micro": 0.706
+        },
+        "global_gnn": {
+            "accuracy": 0.789,
+            "f1_macro": 0.7838888150511,
+            "f1_micro": 0.789
+        },
+        "hybrid": {
+            "accuracy": 0.706,
+            "f1_macro": 0.6857999316971375,
+            "f1_micro": 0.706
+        },
+        "easy_split": {
+            "baseline": {
+                "accuracy": 0.7064128256513026,
+                "f1_macro": 0.6862290416280404,
+                "f1_micro": 0.7064128256513026
+            },
+            "hybrid": {
+                "accuracy": 0.7064128256513026,
+                "f1_macro": 0.6862290416280404,
+                "f1_micro": 0.7064128256513026
+            }
+        },
+        "hard_split": {
+            "baseline": {
+                "accuracy": 0.5,
+                "f1_macro": 0.3333333333333333,
+                "f1_micro": 0.5
+            },
+            "hybrid": {
+                "accuracy": 0.5,
+                "f1_macro": 0.3333333333333333,
+                "f1_micro": 0.5
+            }
+        }
+    },
+    "stats": {
+        "num_hard": 7,
+        "subgraph_size": 1034,
+        "subgraph_edges": 3610,
+        "targeted": false,
+        "adaptive": true,
+        "filtered": true
+    }
+}

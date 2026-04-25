@@ -1,0 +1,71 @@
+{
+    "metrics": {
+        "baseline": {
+            "accuracy": 0.603,
+            "f1_macro": 0.5897275217241982,
+            "f1_micro": 0.603
+        },
+        "global_gnn": {
+            "accuracy": 0.631,
+            "f1_macro": 0.6315534289621533,
+            "f1_micro": 0.631
+        },
+        "hybrid": {
+            "accuracy": 0.628,
+            "f1_macro": 0.630041391819866,
+            "f1_micro": 0.628
+        },
+        "easy_split": {
+            "baseline": {
+                "accuracy": 0.8251231527093597,
+                "f1_macro": 0.7764142804977652,
+                "f1_micro": 0.8251231527093597
+            },
+            "hybrid": {
+                "accuracy": 0.8251231527093597,
+                "f1_macro": 0.7764142804977652,
+                "f1_micro": 0.8251231527093597
+            }
+        },
+        "hard_split": {
+            "baseline": {
+                "accuracy": 0.4511784511784512,
+                "f1_macro": 0.4077334020457875,
+                "f1_micro": 0.4511784511784512
+            },
+            "hybrid": {
+                "accuracy": 0.49326599326599324,
+                "f1_macro": 0.4462577749027126,
+                "f1_micro": 0.49326599326599324
+            }
+        },
+        "calibration": {
+            "correlation": 0.4822378402929218,
+            "bin_accuracies": [
+                0.15384615384615385,
+                0.25,
+                0.548936170212766,
+                0.7458563535911602,
+                0.8377483443708609
+            ],
+            "bins": [
+                0.0,
+                0.2,
+                0.4,
+                0.6,
+                0.8,
+                1.0
+            ]
+        }
+    },
+    "stats": {
+        "num_hard": 1570,
+        "subgraph_size": 2364,
+        "subgraph_edges": 8104,
+        "targeted": false,
+        "adaptive": true,
+        "filtered": true,
+        "t_global_train": 18.190999031066895,
+        "t_hybrid_train": 22.258983850479126
+    }
+}
