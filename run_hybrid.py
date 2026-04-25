@@ -39,6 +39,7 @@ def main():
     parser.add_argument("--filter", action="store_true", help="Filter noisy edges in subgraph")
     parser.add_argument("--learned_conf", action="store_true", help="Use ML model for confidence")
     parser.add_argument("--fusion", type=str, default="hard", choices=["hard", "soft"])
+    parser.add_argument("--hidden_channels", type=int, default=32, help="Hidden dimension for GNN")
     parser.add_argument("--output", type=str, default="results/hybrid_result.json")
     
     args = parser.parse_args()
@@ -86,7 +87,7 @@ def main():
     
     print(f"--- Phase 4: Full-Graph GNN Baseline ---")
     num_communities = len(set(partition.values()))
-    global_model = get_model(args.gnn_type, data.num_features, 16, num_classes, 
+    global_model = get_model(args.gnn_type, data.num_features, args.hidden_channels, num_classes, 
                            num_communities=num_communities)
     # Pass full data comm_ids
     all_comm_ids = torch.tensor([partition[i] for i in range(data.num_nodes)], dtype=torch.long)
@@ -115,7 +116,7 @@ def main():
     sub_confidences = torch.tensor(confidences[node_list], dtype=torch.float)
     node_weights = (1.0 - sub_confidences) + 0.1 
     
-    hybrid_gnn_model = get_model(args.gnn_type, data.num_features, 16, num_classes, 
+    hybrid_gnn_model = get_model(args.gnn_type, data.num_features, args.hidden_channels, num_classes, 
                                num_communities=num_communities)
     
     supervision_mask = None

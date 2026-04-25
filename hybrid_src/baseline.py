@@ -144,6 +144,93 @@ def get_community_label_distribution(partition, labels, train_mask, num_classes)
         
     return probs
 
+def learned_confidence(G, partition, preds, labels, train_mask):
+    """
+    Learns 'where to learn' using high-fidelity signals:
+    Input:
+    - Structural: Degree, Consistency
+    - Semantic: Community Label Entropy, Neighbor Label Diversity
+    """
+    from sklearn.linear_model import LogisticRegression
+    from scipy.stats import entropy
+    import numpy as np
+    from collections import Counter
+    
+    num_nodes = len(preds)
+    
+    # 1. Community-level Semantic Signals
+    comm_labels = {cid: [] for cid in set(partition.values())}
+    for i in range(num_nodes):
+        comm_labels[partition[i]].append(preds[i])
+        
+    comm_entropies = {}
+    for cid, lbls in comm_labels.items():
+        counts = list(Counter(lbls).values())
+        comm_entropies[cid] = entropy(counts) if len(counts) > 1 else 0
+    
+    # 2. Node-level Feature Engineering
+    deg = dict(G.degree())
+    features = []
+    
+    for i in range(num_nodes):
+        neighbors = list(G.neighbors(i))
+        # Structural 1: Degree
+        d = deg[i]
+        # Semantic 1: Community Label Entropy
+        c_ent = comm_entropies[partition[i]]
+        
+        if not neighbors:
+            features.append([d, 1.0, 1.0, c_ent, 0.0])
+            continue
+            
+        # Structural 2: Internal/External Ratio
+        internal = sum(1 for n in neighbors if partition[n] == partition[i])
+        consistency = internal / d
+        
+        # Semantic 2: Neighbor Agreement
+        agree = sum(1 for n in neighbors if preds[n] == preds[i])
+        agreement = agree / d
+        
+        # Semantic 3: Neighbor Label Diversity
+        neigh_labels = [preds[n] for n in neighbors]
+        neigh_counts = list(Counter(neigh_labels).values())
+        neigh_ent = entropy(neigh_counts) if len(neigh_counts) > 1 else 0
+        
+        features.append([d, consistency, agreement, c_ent, neigh_ent])
+        
+    features = np.array(features)
+    
+    # 2. Training Labels (is Louvain correct?)
+    # Only training on nodes where we have ground truth
+    train_indices = np.where(train_mask)[0]
+    y_train = (preds[train_indices] == labels[train_indices]).astype(int)
+    X_train = features[train_indices]
+    
+    # 3. Fit Confidence Predictor
+    if len(set(y_train)) > 1:
+        clf = LogisticRegression(max_iter=1000)
+        clf.fit(X_train, y_train)
+        # Probability of being correct
+        confidences = clf.predict_proba(features)[:, 1]
+    else:
+        # Fallback to heuristic
+        print("WARNING: Learned confidence failed (single class). Using heuristic.")
+        confidences = compute_confidence(G, partition, preds)
+        
+    # ADVANCED FIX: Uncertainty Propagation
+    # conf_final = alpha * self_conf + (1-alpha) * mean(neighbor_conf)
+    alpha = 0.7
+    final_confs = np.zeros(num_nodes)
+    for i in range(num_nodes):
+        neighbors = list(G.neighbors(i))
+        if not neighbors:
+            final_confs[i] = confidences[i]
+            continue
+        neigh_conf = np.mean([confidences[n] for n in neighbors])
+        final_confs[i] = alpha * confidences[i] + (1 - alpha) * neigh_conf
+        
+    return final_confs
+
 def compute_confidence(G, partition, preds):
     """
     Improved confidence metric:
