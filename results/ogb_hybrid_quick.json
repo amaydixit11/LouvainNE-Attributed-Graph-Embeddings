@@ -1,0 +1,7 @@
+{
+    "dataset": "ogbn-arxiv",
+    "tau": 0.7,
+    "baseline_acc": 0.6036870152048227,
+    "hybrid_acc": 0.5809106433759234,
+    "pct_hard": 0.49713303768091976
+}

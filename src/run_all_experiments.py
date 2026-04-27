@@ -68,7 +68,7 @@ def check_dependencies() -> List[str]:
 def prepare_datasets() -> bool:
     """Run dataset preparation."""
     return run_command(
-        [sys.executable, str(REPO_ROOT / "prepare_datasets.py")],
+        [sys.executable, str(REPO_ROOT / "src" / "prepare_datasets.py")],
         "Prepare datasets"
     )
 
@@ -76,7 +76,7 @@ def prepare_datasets() -> bool:
 def run_standard_benchmarks(datasets: List[str], embedding_dim: int) -> bool:
     """Run standard benchmarks with link prediction."""
     return run_command(
-        [sys.executable, str(REPO_ROOT / "benchmark_datasets_lp.py"),
+        [sys.executable, str(REPO_ROOT / "src" / "benchmark_datasets_lp.py"),
          "--datasets"] + datasets + ["--embedding-dim", str(embedding_dim)],
         f"Standard benchmarks (link prediction enabled) for {datasets}"
     )
@@ -84,7 +84,7 @@ def run_standard_benchmarks(datasets: List[str], embedding_dim: int) -> bool:
 
 def run_ogb_benchmarks(datasets: List[str], embedding_dim: int, no_attributes: bool = False) -> bool:
     """Run OGB benchmarks."""
-    cmd = [sys.executable, str(REPO_ROOT / "benchmark_ogb.py"),
+    cmd = [sys.executable, str(REPO_ROOT / "src" / "benchmark_ogb.py"),
            "--datasets"] + datasets + ["--embedding-dim", str(embedding_dim)]
     if no_attributes:
         cmd.append("--no-attributes")
@@ -98,7 +98,7 @@ def run_ogb_benchmarks(datasets: List[str], embedding_dim: int, no_attributes: b
 def generate_report() -> bool:
     """Generate comprehensive SOTA comparison report."""
     return run_command(
-        [sys.executable, str(REPO_ROOT / "generate_sota_report.py")],
+        [sys.executable, str(REPO_ROOT / "src" / "generate_sota_report.py")],
         "Generate comprehensive SOTA report"
     )
 

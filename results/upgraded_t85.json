@@ -1,0 +1,30 @@
+{
+    "metrics": {
+        "baseline": {
+            "accuracy": 0.706,
+            "f1_macro": 0.6857999316971375,
+            "f1_micro": 0.706
+        },
+        "hybrid": {
+            "accuracy": 0.706,
+            "f1_macro": 0.6857999316971375,
+            "f1_micro": 0.706
+        },
+        "easy_split": {
+            "accuracy": 0.7468926553672316,
+            "f1_macro": 0.7230049909334672,
+            "f1_micro": 0.7468926553672316
+        },
+        "hard_split": {
+            "accuracy": 0.391304347826087,
+            "f1_macro": 0.3870432561946943,
+            "f1_micro": 0.391304347826087
+        }
+    },
+    "stats": {
+        "num_hard": 288,
+        "subgraph_size": 862,
+        "targeted": true,
+        "adaptive": true
+    }
+}

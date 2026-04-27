@@ -1,0 +1,12 @@
+# Experiment Configuration
+dataset: Cora
+tau: 0.75
+k: 1
+gnn:
+  type: GCN
+  hidden: 16
+  lr: 0.01
+  epochs: 200
+  weight_decay: 5e-4
+fusion: hard
+output_dir: results/hybrid

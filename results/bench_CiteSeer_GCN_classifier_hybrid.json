@@ -1,0 +1,69 @@
+{
+    "metrics": {
+        "baseline": {
+            "accuracy": 0.593,
+            "f1_macro": 0.5768904976884532,
+            "f1_micro": 0.593
+        },
+        "global_gnn": {
+            "accuracy": 0.691,
+            "f1_macro": 0.6648575821735992,
+            "f1_micro": 0.691
+        },
+        "hybrid": {
+            "accuracy": 0.687,
+            "f1_macro": 0.6626356007085269,
+            "f1_micro": 0.687
+        },
+        "easy_split": {
+            "baseline": {
+                "accuracy": 0.821656050955414,
+                "f1_macro": 0.7775576263314422,
+                "f1_micro": 0.821656050955414
+            },
+            "hybrid": {
+                "accuracy": 0.821656050955414,
+                "f1_macro": 0.7775576263314422,
+                "f1_micro": 0.821656050955414
+            }
+        },
+        "hard_split": {
+            "baseline": {
+                "accuracy": 0.48833819241982507,
+                "f1_macro": 0.4790752554018088,
+                "f1_micro": 0.48833819241982507
+            },
+            "hybrid": {
+                "accuracy": 0.6253644314868805,
+                "f1_macro": 0.6014928188095894,
+                "f1_micro": 0.6253644314868805
+            }
+        },
+        "calibration": {
+            "correlation": 0.40311254876828856,
+            "bin_accuracies": [
+                0.3191489361702128,
+                0.3443223443223443,
+                0.4956521739130435,
+                0.8260869565217391,
+                0.8931297709923665
+            ],
+            "bins": [
+                0.0,
+                0.2,
+                0.4,
+                0.6,
+                0.8,
+                1.0
+            ]
+        }
+    },
+    "stats": {
+        "num_hard": 2242,
+        "subgraph_size": 2836,
+        "subgraph_edges": 7728,
+        "targeted": false,
+        "adaptive": true,
+        "filtered": true
+    }
+}

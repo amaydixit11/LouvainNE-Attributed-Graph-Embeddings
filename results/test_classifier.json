@@ -1,0 +1,39 @@
+{
+    "config": {
+        "seed": 42,
+        "dataset": "Cora",
+        "baseline": "classifier",
+        "tau": 0.75,
+        "k": 1,
+        "gnn_type": "GCN",
+        "epochs": 200,
+        "hidden": 16,
+        "lr": 0.01,
+        "fusion": "hard",
+        "output": "results/test_classifier.json"
+    },
+    "phases": {
+        "num_communities": 102,
+        "num_hard_nodes": 1548,
+        "subgraph_nodes": 2066,
+        "train_nodes_in_subgraph": 96
+    },
+    "metrics": {
+        "baseline": {
+            "accuracy": 0.605,
+            "f1_macro": 0.5878493143258019,
+            "f1_micro": 0.605
+        },
+        "hybrid": {
+            "accuracy": 0.795,
+            "f1_macro": 0.7921013350600737,
+            "f1_micro": 0.795
+        },
+        "improvement": 0.19000000000000006
+    },
+    "runtimes": {
+        "baseline": 4.425942420959473,
+        "gnn": 5.555843830108643,
+        "total": 9.981786251068115
+    }
+}

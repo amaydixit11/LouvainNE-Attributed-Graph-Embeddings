@@ -1,0 +1,24 @@
+{
+    "dataset": "Cora",
+    "seed": 42,
+    "tau": 0.75,
+    "k": 1,
+    "gnn_type": "GCN",
+    "num_hard_nodes": 267,
+    "subgraph_nodes": 841,
+    "louvain_metrics": {
+        "accuracy": 0.766,
+        "f1_macro": 0.7434853370454484,
+        "f1_micro": 0.766
+    },
+    "hybrid_metrics": {
+        "accuracy": 0.766,
+        "f1_macro": 0.7434853370454484,
+        "f1_micro": 0.766
+    },
+    "runtimes": {
+        "louvain": 0.36657118797302246,
+        "gnn": 3.683804512023926,
+        "total": 4.050375699996948
+    }
+}
