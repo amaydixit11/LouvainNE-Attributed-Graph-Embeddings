@@ -63,59 +63,78 @@ def generate_synthetic_graph(
     num_classes: int = 10,
     seed: int = 42,
 ) -> GraphData:
-    """Generate a synthetic graph with community structure."""
+    """Generate a synthetic graph with community structure efficiently."""
     rng = np.random.RandomState(seed)
-    
-    # Generate edges with community structure
+
+    # Generate communities
     num_communities = max(10, num_nodes // 100)
-    community_size = num_nodes // num_communities
     communities = rng.randint(0, num_communities, num_nodes)
-    
+
+    # Group nodes by community for fast edge generation
+    comm_to_nodes = [np.where(communities == c)[0] for c in range(num_communities)]
+
     edges = set()
-    for i in range(num_nodes):
-        # Intra-community edges (higher probability)
-        same_comm = np.where(communities == communities[i])[0]
-        num_intra = max(1, int(avg_degree * 0.7))
-        if len(same_comm) > 1:
-            intra_nodes = rng.choice(same_comm, size=min(num_intra, len(same_comm)-1), replace=False)
-            for j in intra_nodes:
-                if i != j:
-                    edges.add((min(i, j), max(i, j)))
-        
-        # Inter-community edges (lower probability)
-        num_inter = max(1, int(avg_degree * 0.3))
-        other_nodes = rng.choice(num_nodes, size=min(num_inter, num_nodes), replace=False)
-        for j in other_nodes:
-            if i != j and communities[i] != communities[j]:
-                edges.add((min(i, j), max(i, j)))
-    
+    total_edges_needed = int(num_nodes * avg_degree / 2)
+    intra_target = int(total_edges_needed * 0.7)
+    inter_target = total_edges_needed - intra_target
+
+    # 1. Efficient Intra-community edges
+    edges_created = 0
+    while edges_created < intra_target:
+        # Pick a random community that has at least 2 nodes
+        c = rng.randint(0, num_communities)
+        nodes_in_comm = comm_to_nodes[c]
+        if len(nodes_in_comm) < 2:
+            continue
+
+        # Pick two random nodes from this community
+        u, v = rng.choice(nodes_in_comm, size=2, replace=False)
+        edges.add((min(u, v), max(u, v)))
+        edges_created = len(edges) # This is approximate since some might be duplicates
+
+        # To avoid infinite loop if community sizes are too small
+        if len(edges) > intra_target * 1.2:
+            break
+
+    # 2. Efficient Inter-community edges
+    edges_created = len(edges)
+    while edges_created < total_edges_needed:
+        u = rng.randint(0, num_nodes)
+        v = rng.randint(0, num_nodes)
+        if u != v and communities[u] != communities[v]:
+            edges.add((min(u, v), max(u, v)))
+        edges_created = len(edges)
+        if len(edges) > total_edges_needed * 1.2:
+            break
+
     # Convert to edge_index
     edge_list = sorted(list(edges))
     edge_index = torch.tensor([[u, v] for u, v in edge_list] + [[v, u] for u, v in edge_list], dtype=torch.long).t()
-    
+
     # Generate features (correlated with community)
     community_centers = rng.randn(num_communities, num_features)
     features = community_centers[communities] + rng.randn(num_nodes, num_features) * 0.5
     features = torch.from_numpy(features.astype(np.float32))
-    
+
     # Generate labels (based on community with some noise)
     labels = communities % num_classes
     labels = torch.from_numpy(labels.astype(np.int64))
-    
+
     # Create train/val/test splits
     train_mask = torch.zeros(num_nodes, dtype=torch.bool)
     val_mask = torch.zeros(num_nodes, dtype=torch.bool)
     test_mask = torch.zeros(num_nodes, dtype=torch.bool)
-    
+
     for cls in range(num_classes):
         cls_idx = torch.where(labels == cls)[0]
+        if len(cls_idx) == 0: continue
         perm = torch.randperm(len(cls_idx))
         n_train = max(1, int(len(cls_idx) * 0.6))
         n_val = max(1, int(len(cls_idx) * 0.2))
         train_mask[cls_idx[perm[:n_train]]] = True
         val_mask[cls_idx[perm[n_train:n_train+n_val]]] = True
         test_mask[cls_idx[perm[n_train+n_val:]]] = True
-    
+
     return GraphData(
         x=features,
         edge_index=edge_index,

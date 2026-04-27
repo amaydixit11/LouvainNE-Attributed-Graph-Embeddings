@@ -1,0 +1,47 @@
+[
+  {
+    "dataset": "synthetic_10,000",
+    "nodes": 10000,
+    "edges": 50000,
+    "features": 128,
+    "classes": 10,
+    "avg_degree": 10,
+    "setup_time_s": 0.98,
+    "embedding_time_s": 2.23,
+    "total_time_s": 11.02,
+    "peak_memory_mb": 206.6,
+    "node_micro_f1": 0.9995,
+    "completed": true,
+    "error_message": ""
+  },
+  {
+    "dataset": "synthetic_50,000",
+    "nodes": 50000,
+    "edges": 250000,
+    "features": 128,
+    "classes": 10,
+    "avg_degree": 10,
+    "setup_time_s": 16.29,
+    "embedding_time_s": 12.08,
+    "total_time_s": 53.16,
+    "peak_memory_mb": 396.0,
+    "node_micro_f1": 0.9286,
+    "completed": true,
+    "error_message": ""
+  },
+  {
+    "dataset": "synthetic_100,000",
+    "nodes": 100000,
+    "edges": 250000,
+    "features": 128,
+    "classes": 10,
+    "avg_degree": 5,
+    "setup_time_s": 61.06,
+    "embedding_time_s": 15.47,
+    "total_time_s": 95.06,
+    "peak_memory_mb": 672.3,
+    "node_micro_f1": 0.7024,
+    "completed": true,
+    "error_message": ""
+  }
+]
